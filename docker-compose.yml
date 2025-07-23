@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  badsmtp:
+    build: .
+    ports:
+      - "2525:2525"           # Normal SMTP (default BadSMTP)
+      - "25465:25465"         # Implicit TLS test port
+      - "25587:25587"         # STARTTLS test port
+      - "3000-3099:3000-3099" # Greeting delays
+      - "4000-4099:4000-4099" # Connection drop delays
+      - "5000-5099:5000-5099" # Inter-command delays
+      - "6000:6000"           # Drop connection immediately
+    volumes:
+      - ./mailbox:/app/mailbox
+      - ./badsmtp.env:/app/badsmtp.env
+    environment:
+      - PORT=2525
+      - MAILBOX_DIR=/app/mailbox
+      - TLS_HOSTNAME=localhost
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2525"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - badsmtp-network
+
+  # Test client for automated testing (checks representative ports)
+  test-client:
+    image: alpine:latest
+    depends_on:
+      - badsmtp
+    command: |
+      sh -c "
+        apk add --no-cache netcat-openbsd
+        echo 'Testing SMTP connection (2525)...'
+        nc -z badsmtp 2525 || exit 1
+        echo 'Testing TLS connection (25465)...'
+        nc -z badsmtp 25465 || exit 1
+        echo 'Testing STARTTLS connection (25587)...'
+        nc -z badsmtp 25587 || exit 1
+        echo 'Testing delay-range representative ports (3000,4000,5000,6000)...'
+        nc -z badsmtp 3000 || exit 1
+        nc -z badsmtp 4000 || exit 1
+        nc -z badsmtp 5000 || exit 1
+        nc -z badsmtp 6000 || exit 1
+        echo 'All representative tests passed!'
+      "
+    networks:
+      - badsmtp-network
+
+  # Development environment with tools
+  dev:
+    build: .
+    ports:
+      - "2525:2525"
+      - "25465:25465"
+      - "25587:25587"
+      - "3000-3099:3000-3099"
+      - "4000-4099:4000-4099"
+      - "5000-5099:5000-5099"
+      - "6000:6000"
+    volumes:
+      - .:/app
+      - ./mailbox:/app/mailbox
+    environment:
+      - PORT=2525
+      - MAILBOX_DIR=/app/mailbox
+      - TLS_HOSTNAME=localhost
+      - LOG_LEVEL=DEBUG
+    working_dir: /app
+    command: ["./badsmtp"]
+    networks:
+      - badsmtp-network
+
+networks:
+  badsmtp-network:
+    driver: bridge
+
+volumes:
+  mailbox-data:

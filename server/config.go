@@ -1,0 +1,554 @@
+// Package server provides the SMTP server implementation for BadSMTP.
+package server
+
+import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"fmt"
+	"math/big"
+	"net"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"badsmtp/logging"
+)
+
+const (
+	// DefaultPort is the normal port that the server listens on, with no special behaviour.
+	// It is above 1000 so it can be run as an unprivileged user.
+	DefaultPort = 2525
+	// DefaultGreetingDelayStart is the first port number in the range used to trigger greeting delays.
+	DefaultGreetingDelayStart = 3000
+	// DefaultCommandDelayStart is the first port number in the range used to trigger command delays.
+	DefaultCommandDelayStart = 4000
+	// DefaultDropDelayStart is the first port number in the range used to trigger delayed drops.
+	DefaultDropDelayStart = 5000
+	// DefaultImmediateDropPort is the port number that triggers an immediate drop without any delay. This is a single port, not a range start.
+	DefaultImmediateDropPort = 6000
+	// DefaultTLSPort is the port number to listen for implicit TLS connections (SMTPS).
+	DefaultTLSPort = 25465
+	// DefaultSTARTTLSPort is the port number to listen for STARTTLS connections (SMTP+STARTTLS).
+	DefaultSTARTTLSPort = 25587
+
+	// DefaultTLSHostname is the default hostname used for generated self-signed certificates.
+	DefaultTLSHostname = "badsmtp.test"
+
+	// CertValidityHours is the number of hours that a generated certificate is valid for.
+	CertValidityHours = 24
+
+	// MailboxDirPermissions defines the permissions for the mailbox directory.
+	MailboxDirPermissions = 0750
+
+	// DelayMultiplier is used to calculating delays by multiplying with port offsets within ranges (seconds per port offset).
+	DelayMultiplier = 10
+
+	// DefaultRSAKeySize is the default size for RSA keys used in self-signed certificates.
+	DefaultRSAKeySize = 2048
+
+	// MaxMessageSize is the maximum allowed message size in bytes (10MB)
+	MaxMessageSize = 10 * 1024 * 1024
+	// MaxCommandLength is the maximum allowed SMTP command length in bytes
+	MaxCommandLength = 4096
+	// MaxScannerBuffer is the maximum buffer size for scanning input
+	MaxScannerBuffer = 64 * 1024
+)
+
+// PortRange represents a range of ports with validation capabilities.
+type PortRange struct {
+	Name  string
+	Start int
+	End   int
+}
+
+// NewPortRange creates a new port range.
+func NewPortRange(name string, start, rangeSize int) PortRange {
+	return PortRange{
+		Name:  name,
+		Start: start,
+		End:   start + rangeSize,
+	}
+}
+
+// Contains checks if a port is within this range.
+func (pr PortRange) Contains(port int) bool {
+	return port >= pr.Start && port <= pr.End
+}
+
+// OverlapsWith checks if this range overlaps with another range.
+func (pr PortRange) OverlapsWith(other PortRange) bool {
+	return pr.Start <= other.End && other.Start <= pr.End
+}
+
+// ConflictError returns a formatted error for range conflicts.
+func (pr PortRange) ConflictError(other PortRange) error {
+	return fmt.Errorf("port ranges overlap: %s (%d-%d) and %s (%d-%d)",
+		pr.Name, pr.Start, pr.End, other.Name, other.Start, other.End)
+}
+
+// PortConflictError returns a formatted error for port conflicts with this range.
+func (pr PortRange) PortConflictError(port int, portName string) error {
+	return fmt.Errorf("%s port %d conflicts with %s range (%d-%d)",
+		portName, port, pr.Name, pr.Start, pr.End)
+}
+
+// PortValidator manages port validation across multiple ranges and individual ports.
+type PortValidator struct {
+	ranges []PortRange
+	ports  map[string]int
+}
+
+// NewPortValidator creates a new port validator.
+func NewPortValidator() *PortValidator {
+	return &PortValidator{
+		ranges: make([]PortRange, 0),
+		ports:  make(map[string]int),
+	}
+}
+
+// AddRange adds a port range to validate.
+func (pv *PortValidator) AddRange(pr PortRange) {
+	pv.ranges = append(pv.ranges, pr)
+}
+
+// AddPort adds an individual port to validate.
+func (pv *PortValidator) AddPort(name string, port int) {
+	pv.ports[name] = port
+}
+
+// ValidateRangeOverlaps checks for overlaps between all ranges.
+func (pv *PortValidator) ValidateRangeOverlaps() error {
+	for i := 0; i < len(pv.ranges); i++ {
+		for j := i + 1; j < len(pv.ranges); j++ {
+			if pv.ranges[i].OverlapsWith(pv.ranges[j]) {
+				return pv.ranges[i].ConflictError(pv.ranges[j])
+			}
+		}
+	}
+	return nil
+}
+
+// ValidatePortRangeConflicts checks if any individual ports conflict with ranges.
+func (pv *PortValidator) ValidatePortRangeConflicts() error {
+	for portName, port := range pv.ports {
+		for _, pr := range pv.ranges {
+			if pr.Contains(port) {
+				return pr.PortConflictError(port, portName)
+			}
+		}
+	}
+	return nil
+}
+
+// ValidatePortConflicts checks whether any individual ports conflict with each other.
+func (pv *PortValidator) ValidatePortConflicts() error {
+	portList := make([]struct {
+		name string
+		port int
+	}, 0, len(pv.ports))
+	for name, port := range pv.ports {
+		portList = append(portList, struct {
+			name string
+			port int
+		}{name, port})
+	}
+
+	for i := 0; i < len(portList); i++ {
+		for j := i + 1; j < len(portList); j++ {
+			if portList[i].port == portList[j].port {
+				return fmt.Errorf("%s port %d conflicts with %s port %d",
+					portList[i].name, portList[i].port, portList[j].name, portList[j].port)
+			}
+		}
+	}
+	return nil
+}
+
+// ValidateAll runs all validation checks.
+func (pv *PortValidator) ValidateAll() error {
+	if err := pv.ValidateRangeOverlaps(); err != nil {
+		return err
+	}
+	if err := pv.ValidatePortRangeConflicts(); err != nil {
+		return err
+	}
+	if err := pv.ValidatePortConflicts(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Config represents the server configuration.
+type Config struct {
+	Port          int    `mapstructure:"port"`
+	MailboxDir    string `mapstructure:"mailbox_dir"`
+	GreetingDelay int    `mapstructure:"greeting_delay"`
+	CommandDelay  int    `mapstructure:"command_delay"`
+	DropDelay     int    `mapstructure:"drop_delay"`
+	DropImmediate bool   `mapstructure:"drop_immediate"`
+
+	// Port range configurations
+	GreetingDelayPortStart int `mapstructure:"greeting_delay_port_start"`
+	CommandDelayPortStart  int `mapstructure:"command_delay_port_start"`
+	DropDelayPortStart     int `mapstructure:"drop_delay_port_start"`
+	ImmediateDropPort      int `mapstructure:"immediate_drop_port"`
+
+	// TLS configuration
+	TLSCertFile  string `mapstructure:"tls_cert_file"`
+	TLSKeyFile   string `mapstructure:"tls_key_file"`
+	TLSPort      int    `mapstructure:"tls_port"`      // Port for implicit TLS (default 25465)
+	STARTTLSPort int    `mapstructure:"starttls_port"` // Port for STARTTLS (default 25587)
+	TLSHostname  string `mapstructure:"tls_hostname"`  // Hostname for TLS certificate (default: "badsmtp.test")
+
+	// Hostname-based mailbox routing
+	EnableHostnameRouting bool              `mapstructure:"enable_hostname_routing"` // Enable hostname-based routing
+	HostnameMailboxMap    map[string]string `mapstructure:"hostname_mailbox_map"`
+	// hostname -> mailbox directory mapping (for static config)
+	DefaultMailboxDir string `mapstructure:"default_mailbox_dir"` // fallback directory for unmapped hostnames
+
+	// Extensions: Pluggable architecture for extending functionality
+	// These interfaces allow external packages to extend functionality
+	MessageStore  MessageStore    `mapstructure:"-"` // Where messages are stored (default: local files)
+	Authenticator Authenticator   `mapstructure:"-"` // How users authenticate (default: goodauth/badauth patterns)
+	Authorizer    Authorizer      `mapstructure:"-"` // What authenticated users can do (default: allow all)
+	RateLimiter   RateLimiter     `mapstructure:"-"` // Connection/message rate limiting (default: no limits)
+	Observer      SessionObserver `mapstructure:"-"` // Session event notifications (default: no-op)
+
+	// Logging configuration
+	LogConfig logging.LogConfig `mapstructure:"-"`
+}
+
+// EnsureDefaults sets default extension implementations if not provided.
+// This allows the server to work out-of-the-box with sensible defaults.
+func (c *Config) EnsureDefaults() {
+	c.ensureScalarDefaults()
+	c.ensureMapDefaults()
+	c.ensureExtensionDefaults()
+}
+
+func (c *Config) ensureScalarDefaults() {
+	// Set simple scalar defaults if zero-valued
+	if c.Port == 0 {
+		c.Port = DefaultPort
+	}
+	if c.MailboxDir == "" {
+		c.MailboxDir = "./mailbox"
+	}
+	if c.GreetingDelayPortStart == 0 {
+		c.GreetingDelayPortStart = DefaultGreetingDelayStart
+	}
+	if c.CommandDelayPortStart == 0 {
+		c.CommandDelayPortStart = DefaultCommandDelayStart
+	}
+	if c.DropDelayPortStart == 0 {
+		c.DropDelayPortStart = DefaultDropDelayStart
+	}
+	if c.ImmediateDropPort == 0 {
+		c.ImmediateDropPort = DefaultImmediateDropPort
+	}
+	if c.TLSPort == 0 {
+		c.TLSPort = DefaultTLSPort
+	}
+	if c.STARTTLSPort == 0 {
+		c.STARTTLSPort = DefaultSTARTTLSPort
+	}
+	if c.TLSHostname == "" {
+		c.TLSHostname = DefaultTLSHostname
+	}
+}
+
+func (c *Config) ensureMapDefaults() {
+	// Ensure maps are initialised
+	if c.HostnameMailboxMap == nil {
+		c.HostnameMailboxMap = make(map[string]string)
+	}
+}
+
+func (c *Config) ensureExtensionDefaults() {
+	// Ensure extension defaults
+	if c.MessageStore == nil {
+		c.MessageStore = NewDefaultMessageStore(c.MailboxDir)
+	}
+	if c.Authenticator == nil {
+		c.Authenticator = NewDefaultAuthenticator()
+	}
+	if c.Authorizer == nil {
+		c.Authorizer = NewAllowAllAuthorizer()
+	}
+	if c.RateLimiter == nil {
+		// Use a simple in-memory rate limiter by default
+		c.RateLimiter = NewSimpleRateLimiter()
+	}
+	if c.Observer == nil {
+		c.Observer = &NoOpObserver{}
+	}
+}
+
+// loadHostnameMappingsViper loads hostname mappings from environment variables.
+// Keep this independent of any config library — callers can invoke it after
+// they populate the Config struct from flags/env/files.
+func loadHostnameMappingsViper(config *Config) {
+	if config.HostnameMailboxMap == nil {
+		config.HostnameMailboxMap = make(map[string]string)
+	}
+
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, "BADSMTP_HOSTNAME_MAPPING_") {
+			parts := strings.SplitN(env, "=", 2)
+			if len(parts) == 2 {
+				envName := parts[0]
+				hostname := strings.TrimPrefix(envName, "BADSMTP_HOSTNAME_MAPPING_")
+				hostname = strings.ReplaceAll(hostname, "_", ".")
+				config.HostnameMailboxMap[hostname] = parts[1]
+			}
+		}
+	}
+}
+
+// GetMailboxDir returns the appropriate mailbox directory for a given hostname.
+func (c *Config) GetMailboxDir(hostname string) string {
+	if !c.EnableHostnameRouting {
+		return c.MailboxDir
+	}
+
+	// Clean hostname (remove port if present)
+	if h, _, ok := strings.Cut(hostname, ":"); ok {
+		hostname = h
+	}
+
+	// Look for exact hostname match in static mapping
+	if dir, exists := c.HostnameMailboxMap[hostname]; exists {
+		return dir
+	}
+
+	// Use default directory for unmapped hostnames
+	if c.DefaultMailboxDir != "" {
+		return c.DefaultMailboxDir
+	}
+
+	// Fall back to original mailbox directory
+	return c.MailboxDir
+}
+
+// HasTLS checks if TLS is enabled.
+func (c *Config) HasTLS() bool {
+	// TLS is available if certificate files are provided OR if we can generate self-signed certificates
+	return (c.TLSCertFile != "" && c.TLSKeyFile != "") || true
+}
+
+// GetTLSHostname returns the hostname for TLS certificates.
+func (c *Config) GetTLSHostname() string {
+	if c.TLSHostname != "" {
+		return c.TLSHostname
+	}
+	return DefaultTLSHostname
+}
+
+// GenerateSelfSignedCert generates a self-signed certificate for the given hostname.
+func (c *Config) GenerateSelfSignedCert(hostname string) (tls.Certificate, error) {
+	// Generate private key (ECDSA P-256)
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to generate private key: %v", err)
+	}
+
+	// Certificate template
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			//nolint:misspell // 'Organization' is the stdlib field name
+			Organization:       []string{"BadSMTP Test Server"},
+			Country:            []string{"US"},
+			Province:           []string{"Test"},
+			Locality:           []string{"Test"},
+			OrganizationalUnit: []string{"Test"},
+			CommonName:         hostname,
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(CertValidityHours * time.Hour), // Valid for 24 hours
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	// Add hostname as SAN
+	template.DNSNames = []string{hostname}
+	if ip := net.ParseIP(hostname); ip != nil {
+		template.IPAddresses = []net.IP{ip}
+	}
+
+	// Generate certificate
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to create certificate: %v", err)
+	}
+
+	// Create PEM blocks (ECDSA private key marshalling to ASN.1 DER via x509.MarshalECPrivateKey)
+	keyBytes, err := x509.MarshalECPrivateKey(priv)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to marshal EC private key: %v", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
+
+	// Create TLS certificate
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to create X509 key pair: %v", err)
+	}
+
+	// Do not log certificate generation here; caller (session/server) may log with full context if desired.
+	return cert, nil
+}
+
+// AnalysePortBehaviour analyses the port number to determine connection behaviour.
+func (c *Config) AnalysePortBehaviour() {
+	port := c.Port
+
+	// Greeting delay: configurable range (default 3000-3099)
+	if port >= c.GreetingDelayPortStart && port < c.GreetingDelayPortStart+100 {
+		c.GreetingDelay = (port - c.GreetingDelayPortStart) * DelayMultiplier
+	}
+
+	// Command delay: configurable range (default 4000-4099)
+	if port >= c.CommandDelayPortStart && port < c.CommandDelayPortStart+100 {
+		c.CommandDelay = (port - c.CommandDelayPortStart) * DelayMultiplier
+	}
+
+	// Drop with delay: configurable range (default 5000-5099)
+	if port >= c.DropDelayPortStart && port < c.DropDelayPortStart+100 {
+		c.DropDelay = (port - c.DropDelayPortStart) * DelayMultiplier
+	}
+
+	// Drop immediately: configurable port (default 6000)
+	if port == c.ImmediateDropPort {
+		c.DropImmediate = true
+	}
+}
+
+// GetBehaviourDescription returns a human-readable description of the port behaviour.
+func (c *Config) GetBehaviourDescription() string {
+	port := c.Port
+
+	switch {
+	case port >= c.GreetingDelayPortStart && port < c.GreetingDelayPortStart+100:
+		delay := (port - c.GreetingDelayPortStart) * DelayMultiplier
+		return fmt.Sprintf("Greeting delay: %ds", delay)
+	case port >= c.CommandDelayPortStart && port < c.CommandDelayPortStart+100:
+		delay := (port - c.CommandDelayPortStart) * DelayMultiplier
+		return fmt.Sprintf("Command delay: %ds", delay)
+	case port >= c.DropDelayPortStart && port < c.DropDelayPortStart+100:
+		delay := (port - c.DropDelayPortStart) * DelayMultiplier
+		return fmt.Sprintf("Drop with delay: %ds", delay)
+	case port == c.ImmediateDropPort:
+		return "Immediate drop"
+	default:
+		return "Normal behaviour"
+	}
+}
+
+// ValidatePortConfiguration validates that all port configurations don't conflict
+func (c *Config) ValidatePortConfiguration() error {
+	// Note: PortRangeEnd constant is defined in server.go as 99
+	const PortRangeSize = 99
+
+	validator := NewPortValidator()
+
+	// Add port ranges
+	validator.AddRange(NewPortRange("greeting delay", c.GreetingDelayPortStart, PortRangeSize))
+	validator.AddRange(NewPortRange("command delay", c.CommandDelayPortStart, PortRangeSize))
+	validator.AddRange(NewPortRange("drop delay", c.DropDelayPortStart, PortRangeSize))
+
+	// Add individual ports
+	validator.AddPort("normal", c.Port)
+	validator.AddPort("immediate drop", c.ImmediateDropPort)
+
+	// Add TLS ports if TLS is enabled
+	if c.HasTLS() {
+		validator.AddPort("TLS", c.TLSPort)
+		validator.AddPort("STARTTLS", c.STARTTLSPort)
+	}
+
+	// Run all validations
+	return validator.ValidateAll()
+}
+
+// LoadConfig creates a Config populated from defaults and environment variables.
+// This function mirrors the behaviour the test-suite expects: apply sensible
+// defaults, then allow BADSMTP_* environment variables to override specific
+// fields. It also reads hostname mappings via loadHostnameMappingsViper.
+func LoadConfig() (*Config, error) {
+	cfg := &Config{}
+
+	// Apply defaults first so we have sensible baseline values.
+	cfg.EnsureDefaults()
+
+	// Helper to parse integer env vars
+	parseIntEnv := func(key string, dest *int) error {
+		if v := os.Getenv(key); v != "" {
+			i, err := strconv.Atoi(v)
+			if err != nil {
+				return fmt.Errorf("invalid integer for %s: %w", key, err)
+			}
+			*dest = i
+		}
+		return nil
+	}
+
+	// String overrides
+	if v := os.Getenv("BADSMTP_MAILBOXDIR"); v != "" {
+		cfg.MailboxDir = v
+	}
+	if v := os.Getenv("BADSMTP_TLSCERTFILE"); v != "" {
+		cfg.TLSCertFile = v
+	}
+	if v := os.Getenv("BADSMTP_TLSKEYFILE"); v != "" {
+		cfg.TLSKeyFile = v
+	}
+	if v := os.Getenv("BADSMTP_TLSHOSTNAME"); v != "" {
+		cfg.TLSHostname = v
+	}
+
+	// Integer overrides
+	if err := parseIntEnv("BADSMTP_PORT", &cfg.Port); err != nil {
+		return nil, err
+	}
+	if err := parseIntEnv("BADSMTP_GREETINGDELAYPORTSTART", &cfg.GreetingDelayPortStart); err != nil {
+		return nil, err
+	}
+	if err := parseIntEnv("BADSMTP_COMMANDDELAYPORTSTART", &cfg.CommandDelayPortStart); err != nil {
+		return nil, err
+	}
+	if err := parseIntEnv("BADSMTP_DROPDELAYPORTSTART", &cfg.DropDelayPortStart); err != nil {
+		return nil, err
+	}
+	if err := parseIntEnv("BADSMTP_IMMEDIATEDROPPORT", &cfg.ImmediateDropPort); err != nil {
+		return nil, err
+	}
+	if err := parseIntEnv("BADSMTP_TLSPORT", &cfg.TLSPort); err != nil {
+		return nil, err
+	}
+	if err := parseIntEnv("BADSMTP_STARTTLSPORT", &cfg.STARTTLSPort); err != nil {
+		return nil, err
+	}
+
+	// Load hostname mappings from environment variables like BADSMTP_HOSTNAME_MAPPING_<NAME>
+	loadHostnameMappingsViper(cfg)
+
+	// If mailbox directory was overridden, ensure MessageStore default uses it
+	if cfg.MessageStore == nil {
+		cfg.MessageStore = NewDefaultMessageStore(cfg.MailboxDir)
+	}
+
+	// Ensure extension defaults are set for any remaining nil interfaces
+	cfg.EnsureDefaults()
+
+	return cfg, nil
+}

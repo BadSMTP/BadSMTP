@@ -1,0 +1,22 @@
+{
+  "_comment": "BadSMTP JSON Configuration Example",
+  "_note": "Property names use snake_case to match Koanf/mapstructure keys",
+
+  "port": 2525,
+  "mailbox_dir": "./mailbox",
+
+  "greeting_delay_port_start": 3000,
+  "command_delay_port_start": 4000,
+  "drop_delay_port_start": 5000,
+  "immediate_drop_port": 6000,
+
+  "tls_port": 25465,
+  "starttls_port": 25587,
+  "tls_hostname": "badsmtp.test",
+  "tls_cert_file": "",
+  "tls_key_file": "",
+
+  "enable_hostname_routing": false,
+  "default_mailbox_dir": "",
+  "hostname_mailbox_map": {}
+}

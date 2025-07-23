@@ -1,0 +1,180 @@
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+  modules-download-mode: readonly
+
+output:
+  formats: 
+    - format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+linters-settings:
+  depguard:
+    rules:
+      main:
+        files:
+          - "!**/*_test.go"
+        allow:
+          - $all
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  
+  gocyclo:
+    min-complexity: 15
+  
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+  
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - dupImport
+      - ifElseChain
+      - octalLiteral
+      - whyNoLint
+      - wrapperFunc
+  
+  gofmt:
+    simplify: true
+  
+  goimports:
+    local-prefixes: badsmtp
+  
+  revive:
+    min-confidence: 0
+  
+  mnd:
+    checks: argument,case,condition,operation,return,assign
+    ignored-numbers: 0,1,2,3
+    ignored-functions: strings.SplitN
+  
+  govet:
+    settings:
+      printf:
+        funcs:
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Infof
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Warnf
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Errorf
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Fatalf
+  
+  lll:
+    line-length: 140
+  
+  misspell:
+    locale: GB
+  
+  nolintlint:
+    allow-leading-space: true
+    allow-unused: false
+    require-explanation: false
+    require-specific: false
+
+linters:
+  disable-all: true
+  enable:
+    - bodyclose
+    - dogsled
+    - dupl
+    - errcheck
+    - exhaustive
+    - funlen
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - gocyclo
+    - gofmt
+    - goimports
+    - revive
+    - mnd
+    - goprintffuncname
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - nakedret
+    - noctx
+    - nolintlint
+    - rowserrcheck
+    - copyloopvar
+    - staticcheck
+    - stylecheck
+    - typecheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - mnd
+        - funlen
+        - lll
+        - errcheck
+        - gosec
+        - revive
+        - gocyclo
+    
+    - path: integration_test\.go
+      linters:
+        - mnd
+        - funlen
+        - lll
+        - errcheck
+        - gosec
+        - revive
+        - gocyclo
+    
+    - path: tls_test\.go
+      linters:
+        - mnd
+        - funlen
+        - lll
+        - errcheck
+        - gosec
+        - revive
+        - gocyclo
+    
+    - path: main_test\.go
+      linters:
+        - mnd
+        - funlen
+        - lll
+        - errcheck
+        - gosec
+        - revive
+        - gocyclo
+    
+    - linters:
+        - lll
+      source: "^//go:generate "
+    
+    - linters:
+        - gocritic
+      text: "unnecessaryDefer:"
+  
+  exclude:
+    - abcdef
+  
+  exclude-use-default: false
+  uniq-by-line: true
+  
+  max-issues-per-linter: 0
+  
+  max-same-issues: 0
+  
+  new: false
+  
+  fix: false
