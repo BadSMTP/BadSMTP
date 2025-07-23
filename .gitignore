@@ -1,0 +1,14 @@
+badsmtp
+mailbox/
+node-modules/
+badsmtp.json
+badsmtp.yaml
+badsmtp.env
+.env
+coverage.html
+coverage.txt
+index.html
+go-audit-*
+.claude/
+CLAUDE.md
+*.out

@@ -1,0 +1,54 @@
+# BadSMTP Configuration (YAML format)
+# Property names use snake_case to match Koanf mapstructure keys
+
+# Basic Configuration
+# Main port to listen on (default: 2525)
+port: 2525
+
+# Directory for storing messages in Maildir format (default: ./mailbox)
+# Set to empty string to disable message storage
+mailbox_dir: "./mailbox"
+
+# Port Behaviour Configuration
+# These port ranges trigger specific behaviours for testing SMTP clients
+
+# Starting port for greeting delay range (default: 3000)
+# Ports 3000-3099 introduce delays of (port-3000)*10 seconds before greeting
+greeting_delay_port_start: 3000
+
+# Starting port for command delay range (default: 4000)
+# Ports 4000-4099 introduce delays of (port-4000)*10 seconds after each command
+command_delay_port_start: 4000
+
+# Starting port for drop delay range (default: 5000)
+# Ports 5000-5099 drop connection after (port-5000)*10 seconds
+drop_delay_port_start: 5000
+
+# Port that triggers immediate connection drop (default: 6000)
+immediate_drop_port: 6000
+
+# TLS Configuration
+# Port for implicit TLS (SMTPS) connections (default: 25465)
+tls_port: 25465
+
+# Port for STARTTLS connections (default: 25587)
+starttls_port: 25587
+
+# Hostname for TLS certificates (default: badsmtp.test)
+# Used for self-signed certificate generation
+tls_hostname: "badsmtp.test"
+
+# Optional: Path to custom TLS certificate and key files
+# If not specified, self-signed certificates will be generated automatically
+# tls_cert_file: "/path/to/cert.pem"
+# tls_key_file: "/path/to/key.pem"
+
+# Hostname-based Routing (optional)
+# Enable routing messages to different mailbox directories based on RCPT TO hostname
+enable_hostname_routing: false
+
+# Default mailbox directory
+default_mailbox_dir: ""
+
+# Note: Logging configuration is loaded from environment variables (LOG_*)
+# See badsmtp.env.example for logging configuration options
