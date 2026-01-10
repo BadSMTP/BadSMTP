@@ -12,3 +12,4 @@ go-audit-*
 .claude/
 CLAUDE.md
 *.out
+benchmark_results.txt
