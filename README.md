@@ -117,6 +117,8 @@ Switches are registered on the root command and follow the same logical names, t
 
 ### Port-based Connection Behaviours
 
+BadSMTP uses only ports above 1024 by default to avoid requiring elevated privileges. You can change the listening port using the `port` configuration key or `BADSMTP_PORT` environment variable. If you want to run it on conventional ports (25, 465, 587), you'll need to either run it as a privileged user, or configure a firewall to reroute the traffic from those ports to its high-numbered ones.
+
 Use different ports to simulate various connection issues:
 
 - **Ports 3000-3099**: Greeting delay of `(port - 3000) * 10` seconds
