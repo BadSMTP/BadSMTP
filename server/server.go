@@ -153,11 +153,12 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) startPortListener(port int, description string) {
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	addr := net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))
+	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		s.logger.Error("Failed to listen on port",
 			fmt.Errorf("%v", err),
-			logging.F("port", port), logging.F("desc", description))
+			logging.F("port", port), logging.F("desc", description), logging.F("addr", addr))
 		return
 	}
 	// register listener for shutdown
@@ -169,7 +170,7 @@ func (s *Server) startPortListener(port int, description string) {
 		}
 	}()
 
-	s.logger.Info("Listening on port", logging.F("port", port), logging.F("desc", description))
+	s.logger.Info("Listening on port", logging.F("port", port), logging.F("desc", description), logging.F("addr", addr))
 
 	for {
 		conn, err := listener.Accept()
@@ -221,9 +222,10 @@ func (s *Server) startTLSPortListener(port int, description string) {
 		MinVersion: MinTLSVersion,
 	}
 
-	listener, err := tls.Listen("tcp", fmt.Sprintf(":%d", port), tlsConfig)
+	addr := net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))
+	listener, err := tls.Listen("tcp", addr, tlsConfig)
 	if err != nil {
-		s.logger.Error("Failed to listen on TLS port", err, logging.F("port", port), logging.F("desc", description))
+		s.logger.Error("Failed to listen on TLS port", err, logging.F("port", port), logging.F("desc", description), logging.F("addr", addr))
 		return
 	}
 	// register listener for shutdown
@@ -235,7 +237,7 @@ func (s *Server) startTLSPortListener(port int, description string) {
 		}
 	}()
 
-	s.logger.Info("Listening on TLS port", logging.F("port", port), logging.F("desc", description))
+	s.logger.Info("Listening on TLS port", logging.F("port", port), logging.F("desc", description), logging.F("addr", addr))
 
 	for {
 		conn, err := listener.Accept()

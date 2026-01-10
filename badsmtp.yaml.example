@@ -9,6 +9,10 @@ port: 2525
 # Set to empty string to disable message storage
 mailbox_dir: "./mailbox"
 
+# IP address to bind to (default: 127.0.0.1)
+# Set to 0.0.0.0 to bind all interfaces
+listen_address: "127.0.0.1"
+
 # Port Behaviour Configuration
 # These port ranges trigger specific behaviours for testing SMTP clients
 

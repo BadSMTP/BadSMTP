@@ -115,6 +115,13 @@ Switches are registered on the root command and follow the same logical names, t
 
 ## Testing Features
 
+### Listening Address
+
+The IP address (and indirectly, the interface) the server binds to is configurable via the `listen_address` config key (YAML/JSON) or the `BADSMTP_LISTEN_ADDRESS` environment variable. The default is `127.0.0.1`. Set it to `0.0.0.0` to bind all interfaces, or specify a particular IP to restrict the listener.
+
+> [!CAUTION]
+> In CI and development environments, avoid using anything other than localhost to prevent exposing the test server externally.
+
 ### Port-based Connection Behaviours
 
 BadSMTP uses only ports above 1024 by default to avoid requiring elevated privileges. You can change the listening port using the `port` configuration key or `BADSMTP_PORT` environment variable. If you want to run it on conventional ports (25, 465, 587), you'll need to either run it as a privileged user, or configure a firewall to reroute the traffic from those ports to its high-numbered ones.

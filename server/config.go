@@ -188,6 +188,7 @@ func (pv *PortValidator) ValidateAll() error {
 type Config struct {
 	Port          int    `mapstructure:"port"`
 	MailboxDir    string `mapstructure:"mailbox_dir"`
+	ListenAddress string `mapstructure:"listen_address"` // new: IP to bind listeners to
 	GreetingDelay int    `mapstructure:"greeting_delay"`
 	CommandDelay  int    `mapstructure:"command_delay"`
 	DropDelay     int    `mapstructure:"drop_delay"`
@@ -239,6 +240,9 @@ func (c *Config) ensureScalarDefaults() {
 	}
 	if c.MailboxDir == "" {
 		c.MailboxDir = "./mailbox"
+	}
+	if c.ListenAddress == "" {
+		c.ListenAddress = "127.0.0.1"
 	}
 	if c.GreetingDelayPortStart == 0 {
 		c.GreetingDelayPortStart = DefaultGreetingDelayStart
@@ -490,53 +494,38 @@ func LoadConfig() (*Config, error) {
 	// Apply defaults first so we have sensible baseline values.
 	cfg.EnsureDefaults()
 
-	// Helper to parse integer env vars
-	parseIntEnv := func(key string, dest *int) error {
+	// Consolidate string env overrides into a map to reduce branching and cyclomatic complexity.
+	stringEnvMap := map[string]*string{
+		"BADSMTP_MAILBOXDIR":     &cfg.MailboxDir,
+		"BADSMTP_TLSCERTFILE":    &cfg.TLSCertFile,
+		"BADSMTP_TLSKEYFILE":     &cfg.TLSKeyFile,
+		"BADSMTP_TLSHOSTNAME":    &cfg.TLSHostname,
+		"BADSMTP_LISTEN_ADDRESS": &cfg.ListenAddress,
+	}
+	for key, dest := range stringEnvMap {
+		if v := os.Getenv(key); v != "" {
+			*dest = v
+		}
+	}
+
+	// Consolidate integer env overrides into a map and parse in a loop.
+	intEnvMap := map[string]*int{
+		"BADSMTP_PORT":                   &cfg.Port,
+		"BADSMTP_GREETINGDELAYPORTSTART": &cfg.GreetingDelayPortStart,
+		"BADSMTP_COMMANDDELAYPORTSTART":  &cfg.CommandDelayPortStart,
+		"BADSMTP_DROPDELAYPORTSTART":     &cfg.DropDelayPortStart,
+		"BADSMTP_IMMEDIATEDROPPORT":      &cfg.ImmediateDropPort,
+		"BADSMTP_TLSPORT":                &cfg.TLSPort,
+		"BADSMTP_STARTTLSPORT":           &cfg.STARTTLSPort,
+	}
+	for key, dest := range intEnvMap {
 		if v := os.Getenv(key); v != "" {
 			i, err := strconv.Atoi(v)
 			if err != nil {
-				return fmt.Errorf("invalid integer for %s: %w", key, err)
+				return nil, fmt.Errorf("invalid integer for %s: %w", key, err)
 			}
 			*dest = i
 		}
-		return nil
-	}
-
-	// String overrides
-	if v := os.Getenv("BADSMTP_MAILBOXDIR"); v != "" {
-		cfg.MailboxDir = v
-	}
-	if v := os.Getenv("BADSMTP_TLSCERTFILE"); v != "" {
-		cfg.TLSCertFile = v
-	}
-	if v := os.Getenv("BADSMTP_TLSKEYFILE"); v != "" {
-		cfg.TLSKeyFile = v
-	}
-	if v := os.Getenv("BADSMTP_TLSHOSTNAME"); v != "" {
-		cfg.TLSHostname = v
-	}
-
-	// Integer overrides
-	if err := parseIntEnv("BADSMTP_PORT", &cfg.Port); err != nil {
-		return nil, err
-	}
-	if err := parseIntEnv("BADSMTP_GREETINGDELAYPORTSTART", &cfg.GreetingDelayPortStart); err != nil {
-		return nil, err
-	}
-	if err := parseIntEnv("BADSMTP_COMMANDDELAYPORTSTART", &cfg.CommandDelayPortStart); err != nil {
-		return nil, err
-	}
-	if err := parseIntEnv("BADSMTP_DROPDELAYPORTSTART", &cfg.DropDelayPortStart); err != nil {
-		return nil, err
-	}
-	if err := parseIntEnv("BADSMTP_IMMEDIATEDROPPORT", &cfg.ImmediateDropPort); err != nil {
-		return nil, err
-	}
-	if err := parseIntEnv("BADSMTP_TLSPORT", &cfg.TLSPort); err != nil {
-		return nil, err
-	}
-	if err := parseIntEnv("BADSMTP_STARTTLSPORT", &cfg.STARTTLSPort); err != nil {
-		return nil, err
 	}
 
 	// Load hostname mappings from environment variables like BADSMTP_HOSTNAME_MAPPING_<NAME>

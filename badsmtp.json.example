@@ -4,6 +4,7 @@
 
   "port": 2525,
   "mailbox_dir": "./mailbox",
+  "listen_address": "127.0.0.1",
 
   "greeting_delay_port_start": 3000,
   "command_delay_port_start": 4000,
