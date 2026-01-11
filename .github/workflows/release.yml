@@ -28,6 +28,9 @@ jobs:
           - goos: linux
             goarch: arm64
             platform: linux-arm64
+          - goos: linux
+            goarch: riscv64
+            platform: linux-riscv64
 
           # macOS builds
           - goos: darwin
@@ -162,6 +165,13 @@ jobs:
             curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/badsmtp-linux-arm64.tar.gz | tar xz
             chmod +x badsmtp-linux-arm64
             sudo mv badsmtp-linux-arm64 /usr/local/bin/badsmtp
+            ```
+
+            ### Linux (RISC-V 64-bit)
+            ```bash
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/badsmtp-linux-riscv64.tar.gz | tar xz
+            chmod +x badsmtp-linux-riscv64
+            sudo mv badsmtp-linux-riscv64 /usr/local/bin/badsmtp
             ```
 
             ### macOS (Intel)

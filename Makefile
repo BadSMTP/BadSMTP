@@ -2,7 +2,7 @@
 
 BINARY_NAME=badsmtp
 GO_VERSION=1.25.5
-PLATFORMS=linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
+PLATFORMS=linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64
 
 # Default target
 all: build
@@ -13,6 +13,7 @@ init:
 	go get github.com/joho/godotenv
 
 # Build for current platform
+# Respects GOOS and GOARCH environment variables for cross-compilation
 build:
 	# Build the main module in the current directory
 	go build -o ${BINARY_NAME} .
