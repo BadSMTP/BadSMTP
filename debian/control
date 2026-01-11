@@ -2,7 +2,7 @@ Source: badsmtp
 Section: mail
 Priority: optional
 Maintainer: BadSMTP Maintainers <badsmtp@badsmtp.com>
-Build-Depends: debhelper-compat (= 13), golang-go (>= 1.20)
+Build-Depends: debhelper-compat (= 13), golang-go (>= 1.25), ca-certificates
 Standards-Version: 4.6.2
 Homepage: https://github.com/BadSMTP/BadSMTP
 

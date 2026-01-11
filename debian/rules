@@ -24,6 +24,7 @@ endif
 
 export GOOS := linux
 export CGO_ENABLED := 0
+export GOTOOLCHAIN := local
 
 %:
 	dh $@
