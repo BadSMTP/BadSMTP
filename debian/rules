@@ -22,6 +22,7 @@ else
     $(error Unsupported architecture: $(DEB_HOST_ARCH))
 endif
 
+export PATH := /usr/local/go/bin:$(PATH)
 export GOOS := linux
 export GOHOSTARCH := amd64
 export CGO_ENABLED := 0
