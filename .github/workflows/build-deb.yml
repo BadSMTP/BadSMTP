@@ -2,8 +2,6 @@ name: Build Debian Packages
 
 on:
   push:
-    branches:
-      - '*'
     tags:
       - 'v*'
   workflow_dispatch:
