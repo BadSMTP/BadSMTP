@@ -13,6 +13,8 @@ This directory contains the Debian packaging files for BadSMTP.
 
 ### Prerequisites
 
+Most significantly, the package requires Go 1.25 to build the BadSMTP binaries, which may not be the installed version.
+
 ```bash
 sudo apt-get install debhelper devscripts build-essential golang-go
 ```
