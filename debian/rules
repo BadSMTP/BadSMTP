@@ -25,6 +25,7 @@ endif
 export GOOS := linux
 export GOHOSTARCH := amd64
 export CGO_ENABLED := 0
+export GOTOOLCHAIN := local
 
 %:
 	dh $@
