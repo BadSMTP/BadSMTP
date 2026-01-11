@@ -23,6 +23,7 @@ else
 endif
 
 export GOOS := linux
+export GOHOSTARCH := amd64
 export CGO_ENABLED := 0
 
 %:
