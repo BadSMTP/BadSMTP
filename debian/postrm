@@ -1,0 +1,40 @@
+#!/bin/sh
+# postrm script for badsmtp
+set -e
+
+case "$1" in
+    purge)
+        # Remove user and group
+        if getent passwd badsmtp > /dev/null 2>&1; then
+            deluser --quiet badsmtp > /dev/null || true
+        fi
+
+        if getent group badsmtp > /dev/null 2>&1; then
+            delgroup --quiet badsmtp > /dev/null || true
+        fi
+
+        # Remove data directory and all contents
+        rm -rf /var/lib/badsmtp
+
+        # Reload systemd daemon
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload || true
+        fi
+        ;;
+
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        # Reload systemd daemon on remove/upgrade
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload || true
+        fi
+        ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

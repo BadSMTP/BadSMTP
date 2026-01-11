@@ -1,0 +1,141 @@
+name: Build Debian Packages
+
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g., 1.0.0)'
+        required: false
+        default: 'dev'
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }} package
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64, riscv64]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Debian package for ${{ matrix.arch }}
+        uses: jtdor/build-deb-action@v1
+        env:
+          DEB_BUILD_OPTIONS: noautodbgsym
+        with:
+          host-arch: ${{ matrix.arch }}
+          buildpackage-opts: --build=binary --no-sign
+          docker-image: debian:stable-slim
+
+      - name: List built packages
+        run: |
+          echo "Built packages:"
+          ls -lh debian/artifacts/
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: badsmtp-${{ matrix.arch }}-deb
+          path: debian/artifacts/*.deb
+          if-no-files-found: error
+
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: badsmtp-${{ matrix.arch }}-metadata
+          path: |
+            debian/artifacts/*.changes
+            debian/artifacts/*.buildinfo
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded artifacts
+        run: ls -R artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          find artifacts -name "*.deb" -exec cp {} release/ \;
+          ls -lh release/
+
+      - name: Extract version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release/*.deb
+          body: |
+            ## BadSMTP ${{ steps.get_version.outputs.VERSION }}
+
+            Debian packages for amd64, arm64, and riscv64 architectures.
+
+            ### Installation
+
+            Download the appropriate .deb file for your architecture and install:
+
+            ```bash
+            # For amd64 (x86_64)
+            sudo dpkg -i badsmtp_${{ steps.get_version.outputs.VERSION }}-1_amd64.deb
+
+            # For arm64 (aarch64)
+            sudo dpkg -i badsmtp_${{ steps.get_version.outputs.VERSION }}-1_arm64.deb
+
+            # For riscv64
+            sudo dpkg -i badsmtp_${{ steps.get_version.outputs.VERSION }}-1_riscv64.deb
+            ```
+
+            ### Usage
+
+            After installation:
+
+            ```bash
+            # Start the service
+            sudo systemctl start badsmtp
+
+            # Enable on boot
+            sudo systemctl enable badsmtp
+
+            # Check status
+            sudo systemctl status badsmtp
+
+            # View logs
+            sudo journalctl -u badsmtp -f
+            ```
+
+            ### Configuration
+
+            - Main config: `/etc/badsmtp/badsmtp.yaml`
+            - Environment overrides: `/etc/default/badsmtp`
+            - Data directory: `/var/lib/badsmtp/mailbox`
+
+            Edit the configuration and restart the service:
+
+            ```bash
+            sudo systemctl restart badsmtp
+            ```
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

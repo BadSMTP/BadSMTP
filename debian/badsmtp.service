@@ -1,0 +1,29 @@
+[Unit]
+Description=BadSMTP - The Reliably Unreliable Mail Server
+Documentation=https://github.com/BadSMTP/BadSMTP
+After=network.target
+
+[Service]
+Type=simple
+User=badsmtp
+Group=badsmtp
+# Load environment variables from /etc/default/badsmtp (optional, won't fail if missing)
+EnvironmentFile=-/etc/default/badsmtp
+# Use explicit config file and let env vars override
+ExecStart=/usr/bin/badsmtp --config /etc/badsmtp/badsmtp.yaml
+WorkingDirectory=/var/lib/badsmtp
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/badsmtp
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

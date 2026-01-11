@@ -1,0 +1,38 @@
+# BadSMTP Server Configuration
+# This file is installed to /etc/badsmtp/badsmtp.yaml
+
+# Main SMTP server port (default: 2525)
+# Use a port above 1024 to run as unprivileged user
+port: 2525
+
+# Directory where messages are stored in Maildir format
+mailbox_dir: /var/lib/badsmtp/mailbox
+
+# IP address to bind to (default: 127.0.0.1 for localhost only)
+# Use 0.0.0.0 to listen on all interfaces
+listen_address: 127.0.0.1
+
+# Port range configurations for testing behaviours
+# These define the port ranges that trigger special behaviours
+greeting_delay_port_start: 3000
+command_delay_port_start: 4000
+drop_delay_port_start: 5000
+immediate_drop_port: 6000
+
+# TLS configuration
+# Leave empty to use auto-generated self-signed certificates
+tls_cert_file: ""
+tls_key_file: ""
+tls_port: 25465
+starttls_port: 25587
+tls_hostname: "badsmtp.test"
+
+# Hostname-based routing (optional)
+# Enable this to route messages to different mailboxes based on hostname
+enable_hostname_routing: false
+default_mailbox_dir: ""
+
+# Hostname to mailbox directory mappings (optional)
+# hostname_mailbox_map:
+#   example.com: /var/lib/badsmtp/mailbox/example
+#   test.com: /var/lib/badsmtp/mailbox/test

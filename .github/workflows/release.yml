@@ -160,7 +160,7 @@ jobs:
             sudo mv badsmtp-linux-amd64 /usr/local/bin/badsmtp
             ```
 
-            ### Linux (ARM)
+            ### Linux (ARM64)
             ```bash
             curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/badsmtp-linux-arm64.tar.gz | tar xz
             chmod +x badsmtp-linux-arm64

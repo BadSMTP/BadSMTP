@@ -1,0 +1,11 @@
+badsmtp (0.1.2-1) unstable; urgency=medium
+
+  * Initial Debian package release
+  * SMTP test server for development and CI/CD
+  * Support for multiple authentication mechanisms
+  * Port-based behaviour system for testing
+  * Error simulation capabilities
+  * Maildir-format message storage
+  * TLS/STARTTLS support
+
+ -- BadSMTP Maintainers <badsmtp@badsmtp.com>  Sat, 11 Jan 2025 00:00:00 +0000

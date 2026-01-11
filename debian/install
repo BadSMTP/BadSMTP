@@ -1,0 +1,3 @@
+# Debian install file
+# Files are installed via override_dh_auto_install in debian/rules
+# This file can be used for additional static files if needed

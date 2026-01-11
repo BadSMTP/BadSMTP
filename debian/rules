@@ -1,0 +1,51 @@
+#!/usr/bin/make -f
+
+# Debian build rules for BadSMTP
+# Uses debhelper for most of the work
+
+# Uncomment this to turn on verbose mode
+#export DH_VERBOSE=1
+
+# Support cross-compilation
+# DEB_HOST_GNU_TYPE will be set to the target architecture (e.g., x86_64-linux-gnu, aarch64-linux-gnu)
+# We need to map this to Go's GOARCH values
+include /usr/share/dpkg/architecture.mk
+
+# Map Debian architectures to Go architectures
+ifeq ($(DEB_HOST_ARCH),amd64)
+    export GOARCH := amd64
+else ifeq ($(DEB_HOST_ARCH),arm64)
+    export GOARCH := arm64
+else ifeq ($(DEB_HOST_ARCH),riscv64)
+    export GOARCH := riscv64
+else
+    $(error Unsupported architecture: $(DEB_HOST_ARCH))
+endif
+
+export GOOS := linux
+export CGO_ENABLED := 0
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Build using make with Go cross-compilation environment set
+	$(MAKE) build
+
+override_dh_auto_install:
+	# Install binary
+	install -D -m 0755 badsmtp $(CURDIR)/debian/badsmtp/usr/bin/badsmtp
+	# Install default config file
+	install -D -m 0644 debian/badsmtp.yaml $(CURDIR)/debian/badsmtp/etc/badsmtp/badsmtp.yaml
+	# Install environment defaults file
+	install -D -m 0644 debian/badsmtp.default $(CURDIR)/debian/badsmtp/etc/default/badsmtp
+	# Install systemd service file
+	install -D -m 0644 debian/badsmtp.service $(CURDIR)/debian/badsmtp/lib/systemd/system/badsmtp.service
+
+override_dh_auto_test:
+	# Skip tests during package build
+	# Tests can be run separately if needed
+
+override_dh_auto_clean:
+	$(MAKE) clean || true
+	dh_auto_clean

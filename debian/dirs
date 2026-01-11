@@ -1,0 +1,7 @@
+etc/badsmtp
+etc/default
+var/lib/badsmtp
+var/lib/badsmtp/mailbox
+var/lib/badsmtp/mailbox/new
+var/lib/badsmtp/mailbox/cur
+var/lib/badsmtp/mailbox/tmp

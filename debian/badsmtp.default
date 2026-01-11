@@ -1,0 +1,29 @@
+# Default environment variables for BadSMTP
+# This file is sourced by the systemd service and can be used to override
+# configuration file settings without modifying /etc/badsmtp/badsmtp.yaml
+
+# Uncomment and modify these variables to override defaults
+
+# Port to listen on
+#BADSMTP_PORT=2525
+
+# Mailbox directory
+#BADSMTP_MAILBOX_DIR=/var/lib/badsmtp/mailbox
+
+# Listen address (use 0.0.0.0 for all interfaces, 127.0.0.1 for localhost only)
+#BADSMTP_LISTEN_ADDRESS=127.0.0.1
+
+# TLS configuration
+#BADSMTP_TLS_CERT_FILE=/etc/badsmtp/tls/cert.pem
+#BADSMTP_TLS_KEY_FILE=/etc/badsmtp/tls/key.pem
+#BADSMTP_TLS_PORT=25465
+#BADSMTP_STARTTLS_PORT=25587
+#BADSMTP_TLS_HOSTNAME=badsmtp.test
+
+# Hostname routing
+#BADSMTP_ENABLE_HOSTNAME_ROUTING=true
+#BADSMTP_DEFAULT_MAILBOX_DIR=/var/lib/badsmtp/mailbox
+
+# Example hostname mappings (use uppercase with underscores replacing dots)
+#BADSMTP_HOSTNAME_MAPPING_EXAMPLE_COM=/var/lib/badsmtp/mailbox/example
+#BADSMTP_HOSTNAME_MAPPING_TEST_COM=/var/lib/badsmtp/mailbox/test

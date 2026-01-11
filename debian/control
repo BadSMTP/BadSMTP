@@ -1,0 +1,27 @@
+Source: badsmtp
+Section: mail
+Priority: optional
+Maintainer: BadSMTP Maintainers <badsmtp@badsmtp.com>
+Build-Depends: debhelper-compat (= 13), golang-go (>= 1.20)
+Standards-Version: 4.6.2
+Homepage: https://github.com/BadSMTP/BadSMTP
+
+Package: badsmtp
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, adduser
+Description: SMTP test server for development and CI/CD
+ BadSMTP is a comprehensive SMTP test server written in Go for testing
+ SMTP client implementations. It provides configurable behaviours,
+ authentication mechanisms, error simulation, and message storage
+ capabilities for development and CI/CD pipelines.
+ .
+ It does not send email to end recipients or act as a relay, so it's
+ safe to deploy in CI and test environments.
+ .
+ Features:
+  - Port-based behaviour system (delays, drops, etc.)
+  - Multiple AUTH mechanisms (PLAIN, LOGIN, CRAM-MD5, CRAM-SHA256, XOAUTH2)
+  - Error simulation with verb-prefixed patterns
+  - Maildir-format message storage
+  - TLS/STARTTLS support
+  - Pluggable extension system

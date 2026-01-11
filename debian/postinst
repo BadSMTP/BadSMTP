@@ -1,0 +1,47 @@
+#!/bin/sh
+# postinst script for badsmtp
+set -e
+
+case "$1" in
+    configure)
+        # Create badsmtp system user and group if they don't exist
+        if ! getent group badsmtp > /dev/null 2>&1; then
+            addgroup --system badsmtp
+        fi
+
+        if ! getent passwd badsmtp > /dev/null 2>&1; then
+            adduser --system --home /var/lib/badsmtp \
+                --no-create-home --ingroup badsmtp \
+                --disabled-password --disabled-login \
+                --gecos "BadSMTP Server" badsmtp
+        fi
+
+        # Ensure proper ownership and permissions
+        chown -R badsmtp:badsmtp /var/lib/badsmtp
+        chmod 750 /var/lib/badsmtp
+
+        # Ensure Maildir subdirectories exist with proper permissions
+        for dir in new cur tmp; do
+            mkdir -p /var/lib/badsmtp/mailbox/$dir
+            chown badsmtp:badsmtp /var/lib/badsmtp/mailbox/$dir
+            chmod 750 /var/lib/badsmtp/mailbox/$dir
+        done
+
+        # Reload systemd daemon to pick up the new service file
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload || true
+        fi
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0
