@@ -1,9 +1,9 @@
 badsmtp
 mailbox/
 node-modules/
-badsmtp.json
-badsmtp.yaml
-badsmtp.env
+/badsmtp.json
+/badsmtp.yaml
+/badsmtp.env
 .env
 coverage.html
 coverage.txt
