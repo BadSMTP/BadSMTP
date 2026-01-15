@@ -122,7 +122,7 @@ func TestEHLOSizeAdvertisementAndClamping(t *testing.T) {
 	}{
 		{"size100000.example.com", "100000"},
 		{"size1.example.com", "1000"},
-		{"size20000000.example.com", "10000000"},
+		{"size20000000.example.com", "10485760"},
 	}
 
 	for _, c := range cases {
