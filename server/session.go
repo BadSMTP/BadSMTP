@@ -1314,7 +1314,7 @@ const (
 
 	// Bounds for per-session advertised SIZE from EHLO hostname.
 	advertisedSizeMin = 1000     // minimum allowed advertised SIZE (bytes)
-	advertisedSizeMax = 10000000 // maximum allowed advertised SIZE (bytes)
+	advertisedSizeMax = 10485760 // maximum allowed advertised SIZE (bytes), 10Mb
 
 	// maxWriteDeadline is the maximum write deadline used when trying to notify clients
 	// during shutdown; this bounds per-session write waits.
