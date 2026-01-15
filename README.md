@@ -624,6 +624,7 @@ BadSMTP features a pluggable architecture that allows you to extend its function
 - **RateLimiter**: Custom rate limiting strategies
 - **Authorizer**: Fine-grained authorization controls
 - **CapabilityParser**: Parse and extract custom data from EHLO hostname (e.g., authentication tokens)
+- **SMTPExtension**: Define custom SMTP commands and capabilities beyond standard protocol
 
 ### Using Extensions
 
@@ -643,6 +644,9 @@ func main() {
     config.Authenticator = myextension.NewCustomAuthenticator()
     config.Observer = myextension.NewCustomObserver()
     config.CapabilityParser = myextension.NewTokenParser()  // Extract tokens from EHLO
+    config.SMTPExtensions = []SMTPExtension{
+        myextension.NewCustomCommand(),  // Add custom SMTP commands
+    }
 
     // Ensure defaults for any unset extensions
     config.EnsureDefaults()
@@ -688,6 +692,81 @@ When a client sends `EHLO bstk12345abcde-size10000.example.com`:
 - The token is stored in `Session.metadata["auth_token"]` for access by other extensions
 
 **Important**: All parts must be DNS-compatible (lower-case alphanumeric and hyphens only, no underscores).
+
+#### Example: SMTPExtension for Custom Commands
+
+Extensions can add custom SMTP commands and capabilities beyond the standard protocol. This allows you to implement proprietary or experimental SMTP features for specialized testing scenarios.
+
+**Interface:**
+```go
+type SMTPExtension interface {
+    // GetCapability returns the capability string to advertise in EHLO response
+    // Return empty string to not advertise a capability
+    GetCapability() string
+
+    // GetAllowedStates returns the SMTP states in which this command is allowed
+    // Return nil or empty slice to allow the command in any state
+    GetAllowedStates(command string) []smtp.State
+
+    // HandleCommand processes a custom SMTP command
+    // Returns true if the command was handled, false to pass to default handlers
+    HandleCommand(command string, args []string, session SessionWriter) (bool, error)
+}
+```
+
+**Example Implementation:**
+
+```go
+// GoBananasExtension implements a custom "GOBANANAS" capability with "BANA" command
+type GoBananasExtension struct{}
+
+func (e *GoBananasExtension) GetCapability() string {
+    // This appears as "250-GOBANANAS" in EHLO response
+    return "GOBANANAS"
+}
+
+func (e *GoBananasExtension) GetAllowedStates(command string) []smtp.State {
+    // Allow BANA command in any state (return nil)
+    // To restrict: return []smtp.State{smtp.StateMail, smtp.StateRcpt}
+    return nil
+}
+
+func (e *GoBananasExtension) HandleCommand(command string, args []string, session SessionWriter) (bool, error) {
+    if command == "BANA" {
+        // Handle the custom command
+        err := session.WriteResponse("250 OK NA")
+        return true, err
+    }
+    // Not our command, let other handlers try
+    return false, nil
+}
+```
+
+**Client interaction:**
+```
+> EHLO client.example.com
+< 250-badsmtp.test
+< 250-GOBANANAS
+< 250 OK
+> BANA
+< 250 OK NA
+```
+
+**SessionWriter interface** provides limited session access for extensions:
+- `WriteResponse(response string)` - Send SMTP responses to the client
+- `GetMetadata()` - Access session metadata (e.g., tokens from CapabilityParser)
+- `SetMetadata(key, value)` - Store custom data for other extensions
+
+**State Management**: Extensions can control when commands are allowed:
+- Return `nil` from `GetAllowedStates()` to allow in any state
+- Return specific states to restrict (e.g., only after MAIL FROM)
+- State validation occurs before `HandleCommand()` is called
+
+**Use Cases:**
+- Testing proprietary SMTP extensions
+- Implementing experimental features
+- Simulating vendor-specific commands
+- Creating test scenarios for custom protocols built on SMTP
 
 ## Contributing
 

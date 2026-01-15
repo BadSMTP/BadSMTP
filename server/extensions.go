@@ -1,5 +1,9 @@
 package server
 
+import (
+	"badsmtp/smtp"
+)
+
 // Extensions provides pluggable functionality for BadSMTP.
 // These interfaces allow external packages to extend core SMTP functionality
 // without modifying the core codebase.
@@ -116,8 +120,9 @@ type ErrorSimulator interface {
 // modifying the capability configuration accordingly.
 //
 // Example use case: Extract authentication tokens from the hostname label:
-//   Input:  "token_abc123xyz-size10000-authplain.example.com"
-//   Output: parts=["size10000", "authplain"], metadata={"token": "abc123xyz"}
+//
+//	Input:  "tokenabc123xyz-size10000-authplain.example.com"
+//	Output: parts=["size10000", "authplain"], metadata={"token": "abc123xyz"}
 type CapabilityParser interface {
 	// ParseCapabilities receives the original hostname and parsed capability parts.
 	// It returns:
@@ -126,4 +131,38 @@ type CapabilityParser interface {
 	//
 	// The default implementation simply returns the parts unchanged with empty metadata.
 	ParseCapabilities(hostname string, parts []string) ([]string, map[string]interface{})
+}
+
+// SMTPExtension allows defining custom SMTP commands and capabilities.
+// Extensions can advertise custom capabilities in the EHLO response and handle custom commands.
+//
+// Example: Implementing a "GOBANANAS" extension with a "BANA" command
+type SMTPExtension interface {
+	// GetCapability returns the capability string to advertise in EHLO response.
+	// Return empty string to not advertise a capability.
+	// Example: "GOBANANAS" will appear as "250-GOBANANAS" in EHLO response.
+	GetCapability() string
+
+	// GetAllowedStates returns the SMTP states in which this command is allowed.
+	// Return nil or empty slice to allow the command in any state.
+	// Example: []smtp.State{smtp.StateMail, smtp.StateRcpt} allows command only after EHLO/HELO
+	GetAllowedStates(command string) []smtp.State
+
+	// HandleCommand processes a custom SMTP command.
+	// Returns true if the command was handled by this extension, false to pass to default handlers.
+	// The extension is responsible for sending responses using session.WriteResponse().
+	//
+	// Example: Handle "BANA" command and respond with "250 OK NA"
+	HandleCommand(command string, args []string, session SessionWriter) (handled bool, err error)
+}
+
+// SessionWriter provides methods for extensions to interact with the SMTP session.
+// This is a subset of Session functionality exposed to extensions for writing responses.
+type SessionWriter interface {
+	// WriteResponse sends a response to the client
+	WriteResponse(response string) error
+	// GetMetadata returns session metadata set by other extensions
+	GetMetadata() map[string]interface{}
+	// SetMetadata stores custom data in session metadata
+	SetMetadata(key string, value interface{})
 }

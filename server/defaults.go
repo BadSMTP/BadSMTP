@@ -260,6 +260,6 @@ func NewDefaultCapabilityParser() *DefaultCapabilityParser {
 }
 
 // ParseCapabilities returns the parts unchanged with empty metadata (default behaviour).
-func (p *DefaultCapabilityParser) ParseCapabilities(_ string, parts []string) ([]string, map[string]interface{}) {
+func (p *DefaultCapabilityParser) ParseCapabilities(_ string, parts []string) (modifiedParts []string, metadata map[string]interface{}) {
 	return parts, make(map[string]interface{})
 }

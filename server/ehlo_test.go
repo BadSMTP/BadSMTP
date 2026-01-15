@@ -199,12 +199,11 @@ func TestAuthMechanismKeywords(t *testing.T) {
 // This is just an example - real extensions would implement their own parsing logic.
 type testCapabilityParser struct{}
 
-func (p *testCapabilityParser) ParseCapabilities(_ string, parts []string) ([]string, map[string]interface{}) {
-	metadata := make(map[string]interface{})
-	newParts := []string{}
+func (p *testCapabilityParser) ParseCapabilities(_ string, parts []string) (modifiedParts []string, metadata map[string]interface{}) {
+	metadata = make(map[string]interface{})
+	modifiedParts = []string{}
 
-	// Example: Extract parts starting with "xtoken" (DNS-compatible, no underscores)
-	// Real extensions would use their own prefixes and parsing logic
+	// Example: Extract parts starting with "xtoken"
 	for _, part := range parts {
 		if strings.HasPrefix(part, "xtoken") {
 			// Extract the token value after the prefix
@@ -212,11 +211,11 @@ func (p *testCapabilityParser) ParseCapabilities(_ string, parts []string) ([]st
 			metadata["auth_token"] = token
 		} else {
 			// Keep non-token parts for capability processing
-			newParts = append(newParts, part)
+			modifiedParts = append(modifiedParts, part)
 		}
 	}
 
-	return newParts, metadata
+	return modifiedParts, metadata
 }
 
 func TestCapabilityParserExtension(t *testing.T) {
@@ -247,7 +246,7 @@ func TestCapabilityParserExtension(t *testing.T) {
 
 	// Verify token was extracted to session metadata
 	if sess.metadata == nil {
-		t.Fatal("Session metadata not initialized")
+		t.Fatal("Session metadata not initialised")
 	}
 
 	token, ok := sess.metadata["auth_token"]

@@ -82,8 +82,8 @@ type Session struct {
 	hostname      string // The hostname this session is serving
 	logger        *logging.SMTPLogger
 	startTime     time.Time
-	capabilities  Capabilities                // SMTP extensions enabled for this session
-	metadata      map[string]interface{}      // Custom metadata from extensions (e.g., parsed tokens from EHLO hostname)
+	capabilities  Capabilities           // SMTP extensions enabled for this session
+	metadata      map[string]interface{} // Custom metadata from extensions (e.g., parsed tokens from EHLO hostname)
 
 	// Pipelining support
 	responseQueue  []string // Buffer for pipelined responses
@@ -131,8 +131,8 @@ func NewSessionWithHostname(conn net.Conn, config *Config, mailbox *storage.Mail
 		hostname:       hostname,
 		logger:         smtpLogger,
 		startTime:      time.Now(),
-		advertisedSize: 0,                         // 0 means fallback to global MaxMessageSize
-		metadata:       make(map[string]interface{}), // Initialize metadata map for extensions
+		advertisedSize: 0,                            // 0 means fallback to global MaxMessageSize
+		metadata:       make(map[string]interface{}), // Initialise metadata map for extensions
 	}
 
 	return session
@@ -269,13 +269,63 @@ func (s *Session) handleCommand(line string) error {
 	if h, ok := handlers[cmd.Name]; ok {
 		cmdErr = h(cmd)
 	} else {
-		cmdErr = s.writeResponse("500 Command not recognised")
+		// Try custom SMTP extensions
+		handled, err := s.tryExtensionHandlers(cmd)
+		if err != nil {
+			cmdErr = err
+		} else if !handled {
+			cmdErr = s.writeResponse("500 Command not recognised")
+		}
 	}
 
 	if cmdErr != nil || s.breaksPipelining(cmd.Name) {
 		return s.flushAndReturn(cmdErr)
 	}
 	return cmdErr
+}
+
+// tryExtensionHandlers attempts to handle a command using registered SMTP extensions.
+// Returns (handled, error) where handled indicates if an extension handled the command.
+func (s *Session) tryExtensionHandlers(cmd *smtp.Command) (bool, error) {
+	if s.config.SMTPExtensions == nil {
+		return false, nil
+	}
+
+	for _, ext := range s.config.SMTPExtensions {
+		// Check if this extension allows the command in the current state
+		if !s.isCommandAllowedByExtension(ext, cmd.Name) {
+			continue
+		}
+
+		// State is allowed (or no restriction), try to handle the command
+		handled, err := ext.HandleCommand(cmd.Name, cmd.Args, s)
+		if err != nil {
+			return handled, err
+		}
+		if handled {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// isCommandAllowedByExtension checks if an extension allows a command in the current state.
+func (s *Session) isCommandAllowedByExtension(ext SMTPExtension, command string) bool {
+	allowedStates := ext.GetAllowedStates(command)
+	if len(allowedStates) == 0 {
+		// No restriction, command allowed in any state
+		return true
+	}
+
+	// Check if current state is in allowed states
+	for _, state := range allowedStates {
+		if state == s.state {
+			return true
+		}
+	}
+
+	return false
 }
 
 // parseAndLogCommand parses, logs, and validates a command line. If it writes a response
@@ -292,15 +342,27 @@ func (s *Session) parseAndLogCommand(line string) (*smtp.Command, []string, erro
 	}
 
 	if !cmd.IsValid() {
-		loggedArgs := cmd.Args
-		if cmd.Name == smtp.CmdAUTH {
-			loggedArgs = auth.RedactAuthArgs(cmd.Args)
+		// Check if this might be a custom extension command before rejecting
+		mightBeCustom := false
+		if len(s.config.SMTPExtensions) > 0 {
+			// We can't check HandleCommand here (would cause double handling),
+			// so we just allow any command to pass if extensions are registered
+			// The actual handling will happen in handleCommand
+			mightBeCustom = true
 		}
-		s.logger.LogCommand(cmd.Name, loggedArgs, s.state.String())
-		if werr := s.writeResponse("500 Command not recognised"); werr != nil {
-			return nil, nil, werr
+
+		if !mightBeCustom {
+			loggedArgs := cmd.Args
+			if cmd.Name == smtp.CmdAUTH {
+				loggedArgs = auth.RedactAuthArgs(cmd.Args)
+			}
+			s.logger.LogCommand(cmd.Name, loggedArgs, s.state.String())
+			if werr := s.writeResponse("500 Command not recognised"); werr != nil {
+				return nil, nil, werr
+			}
+			return nil, nil, nil
 		}
-		return nil, nil, nil
+		// Allow command to pass through to extension handlers
 	}
 
 	loggedArgs := cmd.Args
@@ -309,26 +371,32 @@ func (s *Session) parseAndLogCommand(line string) (*smtp.Command, []string, erro
 	}
 	s.logger.LogCommand(cmd.Name, loggedArgs, s.state.String())
 
-	// Check if command is allowed in current state
-	if !cmd.IsAllowedInState(s.state) {
+	// For unknown/potentially custom commands, skip state and args validation
+	// Extensions will handle their own validation
+	isCustomCommand := !cmd.IsValid()
+
+	// Check if command is allowed in current state (skip for custom commands)
+	if !isCustomCommand && !cmd.IsAllowedInState(s.state) {
 		if werr := s.writeResponse(fmt.Sprintf("503 Bad sequence - %s not allowed in %s state", cmd.Name, s.state.String())); werr != nil {
 			return nil, nil, werr
 		}
 		return nil, nil, nil
 	}
 
-	// Validate command arguments
-	if err := cmd.ValidateArgs(); err != nil {
-		if werr := s.writeResponse(err.Error()); werr != nil {
-			return nil, nil, werr
+	// Validate command arguments (skip for custom commands)
+	if !isCustomCommand {
+		if err := cmd.ValidateArgs(); err != nil {
+			if werr := s.writeResponse(err.Error()); werr != nil {
+				return nil, nil, werr
+			}
+			return nil, nil, nil
 		}
-		return nil, nil, nil
 	}
 
 	return cmd, loggedArgs, nil
 }
 
-// commandHandlers returns the dispatch map for SMTP commands. Extracted to reduce handleCommand size.
+// commandHandlers returns the dispatch map for SMTP commands.
 func (s *Session) commandHandlers() map[string]func(*smtp.Command) error {
 	return map[string]func(*smtp.Command) error{
 		smtp.CmdHELO:     func(c *smtp.Command) error { return s.handleHelo(c) },
@@ -393,7 +461,6 @@ func (s *Session) handleEhlo(hostname string) error {
 }
 
 // buildEhloResponse constructs the EHLO response lines for a given hostname.
-// Extracted from the previous large handleEhlo implementation to reduce cyclomatic complexity.
 func (s *Session) buildEhloResponse(hostname string) []string {
 	// Parse capability label from hostname (leftmost label before first dot, split by dashes)
 	parts := parseCapabilityLabel(hostname)
@@ -410,18 +477,31 @@ func (s *Session) buildEhloResponse(hostname string) []string {
 
 	response := []string{fmt.Sprintf("%d-badsmtp.test", smtp.Code250)}
 
-	// Default extensions
+	// Build standard capabilities
+	s.addStandardCapabilities(&response, parts)
+
+	// Add custom SMTP extension capabilities
+	s.addExtensionCapabilities(&response)
+
+	// Final line without dash
+	response = append(response, fmt.Sprintf("%d OK", smtp.Code250))
+	return response
+}
+
+// addStandardCapabilities adds all standard SMTP capabilities to the EHLO response.
+func (s *Session) addStandardCapabilities(response *[]string, parts []string) {
+	// AUTH - enabled by default
 	if !hasCapability(parts, "noauth") {
 		authMechanisms := s.getAuthMechanisms(parts)
 		if authMechanisms != "" {
-			response = append(response, fmt.Sprintf("%d-AUTH %s", smtp.Code250, authMechanisms))
+			*response = append(*response, fmt.Sprintf("%d-AUTH %s", smtp.Code250, authMechanisms))
 		}
 	}
 
 	// 8BITMIME - enabled by default
 	s.capabilities.EightBitMIME = !hasCapability(parts, "no8bit")
 	if s.capabilities.EightBitMIME {
-		response = append(response, fmt.Sprintf("%d-8BITMIME", smtp.Code250))
+		*response = append(*response, fmt.Sprintf("%d-8BITMIME", smtp.Code250))
 	}
 
 	// SIZE - enabled by default, but allow hostname to set a custom value using `size<digits>`
@@ -432,42 +512,51 @@ func (s *Session) buildEhloResponse(hostname string) []string {
 			s.advertisedSize = v
 			sz = v
 		}
-		response = append(response, fmt.Sprintf("%d-SIZE %d", smtp.Code250, sz))
+		*response = append(*response, fmt.Sprintf("%d-SIZE %d", smtp.Code250, sz))
 	}
 
 	// PIPELINING - enabled by default
 	s.capabilities.Pipelining = !hasCapability(parts, "nopipelining")
 	if s.capabilities.Pipelining {
-		response = append(response, fmt.Sprintf("%d-PIPELINING", smtp.Code250))
+		*response = append(*response, fmt.Sprintf("%d-PIPELINING", smtp.Code250))
 	}
 
 	// STARTTLS - enabled by default if TLS is available
 	s.capabilities.STARTTLS = !hasCapability(parts, "nostarttls") && s.config.HasTLS()
 	if s.capabilities.STARTTLS {
-		response = append(response, fmt.Sprintf("%d-STARTTLS", smtp.Code250))
+		*response = append(*response, fmt.Sprintf("%d-STARTTLS", smtp.Code250))
 	}
 
 	// CHUNKING - enabled by default
 	s.capabilities.Chunking = !hasCapability(parts, "nochunking")
 	if s.capabilities.Chunking {
-		response = append(response, fmt.Sprintf("%d-CHUNKING", smtp.Code250))
+		*response = append(*response, fmt.Sprintf("%d-CHUNKING", smtp.Code250))
 	}
 
 	// SMTPUTF8 - enabled by default
 	s.capabilities.SMTPUTF8 = !hasCapability(parts, "nosmtputf8")
 	if s.capabilities.SMTPUTF8 {
-		response = append(response, fmt.Sprintf("%d-SMTPUTF8", smtp.Code250))
+		*response = append(*response, fmt.Sprintf("%d-SMTPUTF8", smtp.Code250))
 	}
 
 	// ENHANCEDSTATUSCODES - enabled by default
 	s.capabilities.EnhancedStatusCodes = !hasCapability(parts, "noenhancedstatuscodes")
 	if s.capabilities.EnhancedStatusCodes {
-		response = append(response, fmt.Sprintf("%d-ENHANCEDSTATUSCODES", smtp.Code250))
+		*response = append(*response, fmt.Sprintf("%d-ENHANCEDSTATUSCODES", smtp.Code250))
+	}
+}
+
+// addExtensionCapabilities adds custom SMTP extension capabilities to the EHLO response.
+func (s *Session) addExtensionCapabilities(response *[]string) {
+	if s.config.SMTPExtensions == nil {
+		return
 	}
 
-	// Final line without dash
-	response = append(response, fmt.Sprintf("%d OK", smtp.Code250))
-	return response
+	for _, ext := range s.config.SMTPExtensions {
+		if capability := ext.GetCapability(); capability != "" {
+			*response = append(*response, fmt.Sprintf("%d-%s", smtp.Code250, capability))
+		}
+	}
 }
 
 // parseAndClampSize looks for 'size<digits>' in the capability parts and returns the clamped value
@@ -1194,6 +1283,27 @@ func (s *Session) getMaxMessageSize() int {
 		return s.advertisedSize
 	}
 	return MaxMessageSize
+}
+
+// SessionWriter interface implementation
+// These methods allow extensions to interact with the session
+
+// WriteResponse sends a response to the client (implements SessionWriter)
+func (s *Session) WriteResponse(response string) error {
+	return s.writeResponse(response)
+}
+
+// GetMetadata returns session metadata set by extensions (implements SessionWriter)
+func (s *Session) GetMetadata() map[string]interface{} {
+	return s.metadata
+}
+
+// SetMetadata stores custom data in session metadata (implements SessionWriter)
+func (s *Session) SetMetadata(key string, value interface{}) {
+	if s.metadata == nil {
+		s.metadata = make(map[string]interface{})
+	}
+	s.metadata[key] = value
 }
 
 const (
