@@ -276,7 +276,7 @@ Whether authentication succeeds depends on the username pattern used:
 
 BadSMTP advertises capabilities in its `EHLO` response and uses the `EHLO` hostname parameter as a convenient mechanism to alter behaviour for that session.
 
-### What `EHLO` advertises
+### Server capability control
 
 Like any *good* SMTP server, BadSMTP advertises a set of capabilities in its `EHLO` response. Common capabilities include:
 
@@ -289,37 +289,66 @@ Like any *good* SMTP server, BadSMTP advertises a set of capabilities in its `EH
 - `PIPELINING` — indicates the server supports pipelined commands (batching multiple commands without waiting for a response between them).
 - `CHUNKING` — indicates the server supports the `BDAT` command for chunked data submission.
 
-All capabilities are enabled by default, but they can be disabled per-session by including keywords in the hostname parameter of the `EHLO` command:
+All capabilities are enabled by default, but they can be configured per-session using the hostname parameter of the `EHLO` command.
 
-- `EHLO noauth.example.com` — disables `AUTH` in the `EHLO` response.
-- `EHLO nopipelining.example.com` — removes the `PIPELINING` capability from the response.
-- `EHLO no8bit.example.com` — removes `8BITMIME`.
-- `EHLO nochunking.example.com` — removes `CHUNKING` (`BDAT`).
-- `EHLO nostarttls.example.com` — removes `STARTTLS` even if TLS is configured.
+### Capability Configuration
 
-These hostname-driven switches are implemented as simple substring checks and are intended to make test scenarios quick to create; they do not persist between sessions. You can disable multiple capabilities by combining substrings, e.g., `EHLO noauth_nopipelining.example.com`.
+The hostname parameter of the `EHLO` command is used to configure server capabilities from the client side, mainly to disable them selectively (since they are all on by default). For example, to disable the `8BITMIME` extension, you'd use `EHLO no8bit.example.com`.
 
-As a consequence of this approach, BadSMTP does not enforce matching reverse DNS checks for `EHLO` hostnames.
+If you need to alter more than one capability, BadSMTP uses a **dash-separated format** for combining multiple capability configurations in a single hostname. The leftmost label (before the first dot) is parsed and split by dashes, with each part representing a capability keyword.
 
-#### Altering `SIZE` via hostname
+**Format**: `<capability1>-<capability2>-<capability3>.example.com`
 
-You can set the size advertised in the `SIZE` capability by including a size value in the hostname:
+**Examples:**
 
-- `EHLO size100000.example.com` — sets `SIZE` to `100000` bytes for that session.
+```
+EHLO size10000-no8bit-authplain.example.com
+EHLO nosize-nopipelining-authlogin.example.com
+EHLO size50000-authcram-nopipelining.example.com
+```
 
-The value may be between 1,000 (1kib) and 10,000,000 (10Mib).
-#### Selecting AUTH mechanisms via hostname
+This format is specifically designed to be compatible with DNS, a single-level wildcard TLS certificate, and common email clients.
 
-By default, all auth mechanisms are available. You can switch `AUTH` off entirely using `noauth` in the hostname, but you can alternatively enable just a single mechanism:
+> [!WARNING]
+> Strictly speaking, a single label within a hostname can only be up to 63 characters long, however, this string is never used as a real hostname, so (client permitting) you should be able to get away with using longer strings. If you can't fit it in, separate your tests, e.g. don't test `noenhancedstatuscodes` and `size20000000` in the same session.
 
-- `EHLO authplain.example.com` — enables only `PLAIN`
-- `EHLO authoauth.example.com` — enables only `XOAUTH2`
-- etc.
+### Capability Keywords
+
+#### SIZE Configuration
+- `size<digits>` — Sets custom SIZE limit (e.g., `size10000` = 10,000 bytes)
+- `nosize` — Disables SIZE extension
+- Value range: 1,000 (1 KiB) to 10,000,000 (10 MiB)
+
+#### Extension Toggles
+- `no8bit` — Disables 8BITMIME extension
+- `nopipelining` — Disables PIPELINING extension
+- `nostarttls` — Disables STARTTLS extension
+- `nochunking` — Disables CHUNKING extension
+- `nosmtputf8` — Disables SMTPUTF8 extension
+- `noenhancedstatuscodes` — Disables enhanced status codes
+
+#### Authentication Mechanisms
+
+By default, all auth mechanisms are available. You can disable AUTH entirely or restrict to specific mechanisms:
+
+- `noauth` — Disables all AUTH mechanisms
+- `authplain` — Restricts AUTH to `PLAIN` only
+- `authlogin` — Restricts AUTH to `LOGIN` only
+- `authcram` — Restricts AUTH to `CRAM-MD5` and `CRAM-SHA256`
+- `authoauth` — Restricts AUTH to `XOAUTH2` only
+
+When multiple auth options are provided in the same label, **only the last one is used**:
+- `EHLO authplain-authoauth.example.com` → Only XOAUTH2 is enabled
+
+#### EHLO Rejection
+- `reject` or `noehl` — Causes EHLO to be rejected with 502 error
+
+#### Extending capability parsing
+See the **Extensibility** section for details on implementing custom capability parsers.
 
 ### PIPELINING: advertised vs. actual behaviour
 
 Advertising `PIPELINING` in `EHLO` is a statement of capability — the server only switches into queued-response pipelined mode when it detects the client is actually piping commands (the server peeks for additional immediate data after reading a command). When pipelining mode is active, responses may be queued, but they are flushed when commands that break pipelining are encountered (e.g., `DATA`, `BDAT`, `AUTH`, `STARTTLS`, `QUIT`).
-
 
 ### `VRFY` support
 
@@ -403,7 +432,7 @@ except smtplib.SMTPAuthenticationError:
 
 When a mailbox is configured, successfully submitted messages (ones generating errors are not stored) are saved into a [maildir](https://en.wikipedia.org/wiki/Maildir) folder structure. Each message is stored as a separate file with a unique filename.
 
-Maildir is widely supported and can be inspected using standard mail clients, command-line tools, or IMAP servers such.
+Maildir is widely supported and can be inspected using standard local mail clients, command-line tools, or IMAP servers.
 
 ## SMTP Command Sequence
 
@@ -490,13 +519,13 @@ When message storage is enabled, performance will depend on the underlying files
 
    - Listening on ports below 1000 typically requires root privileges. Use unprivileged ports such as 2525 (default) or run with appropriate privileges.
 
-1. **Connection refused**
+2. **Connection refused**
 
    - Check if the port is already in use
    - Verify firewall settings
    - Ensure BadSMTP is running
 
-1. **Messages not being saved**
+3. **Messages not being saved**
 
    - Check the mailbox directory path and permissions
    - Verify mailbox configuration
@@ -594,6 +623,7 @@ BadSMTP features a pluggable architecture that allows you to extend its function
 - **SessionObserver**: Monitor and react to SMTP session events
 - **RateLimiter**: Custom rate limiting strategies
 - **Authorizer**: Fine-grained authorization controls
+- **CapabilityParser**: Parse and extract custom data from EHLO hostname (e.g., authentication tokens)
 
 ### Using Extensions
 
@@ -612,6 +642,7 @@ func main() {
     config.MessageStore = myextension.NewCustomMessageStore()
     config.Authenticator = myextension.NewCustomAuthenticator()
     config.Observer = myextension.NewCustomObserver()
+    config.CapabilityParser = myextension.NewTokenParser()  // Extract tokens from EHLO
 
     // Ensure defaults for any unset extensions
     config.EnsureDefaults()
@@ -624,6 +655,39 @@ func main() {
 ### Writing Custom Extensions
 
 See `test-extension.go.example` for a complete example of writing a custom extension. Extensions must implement one or more of the interfaces defined in `server/extensions.go`.
+
+#### Example: CapabilityParser for Token Extraction
+
+Extensions can add custom features to the EHLO hostname:
+
+```go
+type TokenParser struct{}
+
+func (p *TokenParser) ParseCapabilities(hostname string, parts []string) ([]string, map[string]interface{}) {
+    metadata := make(map[string]interface{})
+    newParts := []string{}
+
+    for _, part := range parts {
+        // Extract tokens with custom prefix (e.g., bstk12345abcde)
+        if strings.HasPrefix(part, "bstk") {
+            token := strings.TrimPrefix(part, "bstk")
+            metadata["auth_token"] = token
+        } else {
+            // Keep non-token parts for normal capability processing
+            newParts = append(newParts, part)
+        }
+    }
+
+    return newParts, metadata
+}
+```
+
+When a client sends `EHLO bstk12345abcde-size10000.example.com`:
+- The extension extracts `12345abcde` as an authentication token
+- The server processes `size10000` as a normal SIZE capability
+- The token is stored in `Session.metadata["auth_token"]` for access by other extensions
+
+**Important**: All parts must be DNS-compatible (lower-case alphanumeric and hyphens only, no underscores).
 
 ## Contributing
 

@@ -25,6 +25,36 @@ var (
 	sizeRegex = regexp.MustCompile(`size(\d+)`)
 )
 
+// parseCapabilityLabel extracts and parses the capability configuration from an EHLO hostname.
+// The leftmost label (before the first dot) is extracted and split by dashes into capability parts.
+// Example: "size10000-no8bit-authplain.example.com" returns ["size10000", "no8bit", "authplain"]
+func parseCapabilityLabel(hostname string) []string {
+	// Extract leftmost label before first dot
+	label := hostname
+	if idx := strings.Index(hostname, "."); idx != -1 {
+		label = hostname[:idx]
+	}
+
+	// Convert to lowercase for case-insensitive matching
+	label = strings.ToLower(label)
+
+	// Split by dashes
+	parts := strings.Split(label, "-")
+
+	return parts
+}
+
+// hasCapability checks if any of the capability parts match the given pattern
+func hasCapability(parts []string, pattern string) bool {
+	pattern = strings.ToLower(pattern)
+	for _, part := range parts {
+		if strings.Contains(part, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
 // Capabilities tracks which SMTP extensions are enabled for this session
 type Capabilities struct {
 	Size                bool // SIZE - advertises maximum message size
@@ -52,7 +82,8 @@ type Session struct {
 	hostname      string // The hostname this session is serving
 	logger        *logging.SMTPLogger
 	startTime     time.Time
-	capabilities  Capabilities // SMTP extensions enabled for this session
+	capabilities  Capabilities                // SMTP extensions enabled for this session
+	metadata      map[string]interface{}      // Custom metadata from extensions (e.g., parsed tokens from EHLO hostname)
 
 	// Pipelining support
 	responseQueue  []string // Buffer for pipelined responses
@@ -100,7 +131,8 @@ func NewSessionWithHostname(conn net.Conn, config *Config, mailbox *storage.Mail
 		hostname:       hostname,
 		logger:         smtpLogger,
 		startTime:      time.Now(),
-		advertisedSize: 0, // 0 means fallback to global MaxMessageSize
+		advertisedSize: 0,                         // 0 means fallback to global MaxMessageSize
+		metadata:       make(map[string]interface{}), // Initialize metadata map for extensions
 	}
 
 	return session
@@ -348,8 +380,11 @@ func (s *Session) handleHelo(cmd *smtp.Command) error {
 func (s *Session) handleEhlo(hostname string) error {
 	hostname = strings.ToLower(hostname)
 
+	// Parse capability label for rejection patterns
+	parts := parseCapabilityLabel(hostname)
+
 	// Check for EHLO rejection patterns
-	if strings.Contains(hostname, "reject") || strings.Contains(hostname, "noehl") {
+	if hasCapability(parts, "reject") || hasCapability(parts, "noehl") {
 		return s.writeResponse("502 Command not implemented")
 	}
 
@@ -360,27 +395,40 @@ func (s *Session) handleEhlo(hostname string) error {
 // buildEhloResponse constructs the EHLO response lines for a given hostname.
 // Extracted from the previous large handleEhlo implementation to reduce cyclomatic complexity.
 func (s *Session) buildEhloResponse(hostname string) []string {
+	// Parse capability label from hostname (leftmost label before first dot, split by dashes)
+	parts := parseCapabilityLabel(hostname)
+
+	// Call extension hook to allow custom parsing and metadata extraction
+	if s.config.CapabilityParser != nil {
+		modifiedParts, metadata := s.config.CapabilityParser.ParseCapabilities(hostname, parts)
+		parts = modifiedParts
+		// Store extracted metadata in session for access by other extensions
+		for k, v := range metadata {
+			s.metadata[k] = v
+		}
+	}
+
 	response := []string{fmt.Sprintf("%d-badsmtp.test", smtp.Code250)}
 
 	// Default extensions
-	if !strings.Contains(hostname, "noauth") {
-		authMechanisms := s.getAuthMechanisms(hostname)
+	if !hasCapability(parts, "noauth") {
+		authMechanisms := s.getAuthMechanisms(parts)
 		if authMechanisms != "" {
 			response = append(response, fmt.Sprintf("%d-AUTH %s", smtp.Code250, authMechanisms))
 		}
 	}
 
 	// 8BITMIME - enabled by default
-	s.capabilities.EightBitMIME = !strings.Contains(hostname, "no8bit")
+	s.capabilities.EightBitMIME = !hasCapability(parts, "no8bit")
 	if s.capabilities.EightBitMIME {
 		response = append(response, fmt.Sprintf("%d-8BITMIME", smtp.Code250))
 	}
 
 	// SIZE - enabled by default, but allow hostname to set a custom value using `size<digits>`
-	s.capabilities.Size = !strings.Contains(hostname, "nosize")
+	s.capabilities.Size = !hasCapability(parts, "nosize")
 	if s.capabilities.Size {
 		sz := MaxMessageSize
-		if v, ok := s.parseAndClampSize(hostname); ok {
+		if v, ok := s.parseAndClampSize(parts); ok {
 			s.advertisedSize = v
 			sz = v
 		}
@@ -388,31 +436,31 @@ func (s *Session) buildEhloResponse(hostname string) []string {
 	}
 
 	// PIPELINING - enabled by default
-	s.capabilities.Pipelining = !strings.Contains(hostname, "nopipelining")
+	s.capabilities.Pipelining = !hasCapability(parts, "nopipelining")
 	if s.capabilities.Pipelining {
 		response = append(response, fmt.Sprintf("%d-PIPELINING", smtp.Code250))
 	}
 
 	// STARTTLS - enabled by default if TLS is available
-	s.capabilities.STARTTLS = !strings.Contains(hostname, "nostarttls") && s.config.HasTLS()
+	s.capabilities.STARTTLS = !hasCapability(parts, "nostarttls") && s.config.HasTLS()
 	if s.capabilities.STARTTLS {
 		response = append(response, fmt.Sprintf("%d-STARTTLS", smtp.Code250))
 	}
 
 	// CHUNKING - enabled by default
-	s.capabilities.Chunking = !strings.Contains(hostname, "nochunking")
+	s.capabilities.Chunking = !hasCapability(parts, "nochunking")
 	if s.capabilities.Chunking {
 		response = append(response, fmt.Sprintf("%d-CHUNKING", smtp.Code250))
 	}
 
 	// SMTPUTF8 - enabled by default
-	s.capabilities.SMTPUTF8 = !strings.Contains(hostname, "nosmtputf8")
+	s.capabilities.SMTPUTF8 = !hasCapability(parts, "nosmtputf8")
 	if s.capabilities.SMTPUTF8 {
 		response = append(response, fmt.Sprintf("%d-SMTPUTF8", smtp.Code250))
 	}
 
 	// ENHANCEDSTATUSCODES - enabled by default
-	s.capabilities.EnhancedStatusCodes = !strings.Contains(hostname, "noenhancedstatuscodes")
+	s.capabilities.EnhancedStatusCodes = !hasCapability(parts, "noenhancedstatuscodes")
 	if s.capabilities.EnhancedStatusCodes {
 		response = append(response, fmt.Sprintf("%d-ENHANCEDSTATUSCODES", smtp.Code250))
 	}
@@ -422,25 +470,28 @@ func (s *Session) buildEhloResponse(hostname string) []string {
 	return response
 }
 
-// parseAndClampSize looks for 'size<digits>' in the hostname and returns the clamped value
+// parseAndClampSize looks for 'size<digits>' in the capability parts and returns the clamped value
 // and true if a value was successfully parsed. If not present / parse error, returns (0,false).
-func (s *Session) parseAndClampSize(hostname string) (int, bool) {
-	m := sizeRegex.FindStringSubmatch(hostname)
-	if len(m) != 2 {
-		return 0, false
+func (s *Session) parseAndClampSize(parts []string) (int, bool) {
+	// Check each part for size pattern
+	for _, part := range parts {
+		m := sizeRegex.FindStringSubmatch(part)
+		if len(m) == 2 {
+			v, err := strconv.Atoi(m[1])
+			if err != nil || v <= 0 {
+				continue
+			}
+			if v < advertisedSizeMin {
+				s.logger.Debug("advertised SIZE below minimum; clamping to min", logging.F("requested", v), logging.F("min", advertisedSizeMin))
+				v = advertisedSizeMin
+			} else if v > advertisedSizeMax {
+				s.logger.Debug("advertised SIZE above maximum; clamping to max", logging.F("requested", v), logging.F("max", advertisedSizeMax))
+				v = advertisedSizeMax
+			}
+			return v, true
+		}
 	}
-	v, err := strconv.Atoi(m[1])
-	if err != nil || v <= 0 {
-		return 0, false
-	}
-	if v < advertisedSizeMin {
-		s.logger.Debug("advertised SIZE below minimum; clamping to min", logging.F("requested", v), logging.F("min", advertisedSizeMin))
-		v = advertisedSizeMin
-	} else if v > advertisedSizeMax {
-		s.logger.Debug("advertised SIZE above maximum; clamping to max", logging.F("requested", v), logging.F("max", advertisedSizeMax))
-		v = advertisedSizeMax
-	}
-	return v, true
+	return 0, false
 }
 
 func (s *Session) handleAuth(cmd *smtp.Command) error {
@@ -1109,20 +1160,27 @@ func (s *Session) flushResponses() error {
 	return nil
 }
 
-// getAuthMechanisms returns auth mechanisms string based on hostname patterns.
-func (s *Session) getAuthMechanisms(hostname string) string {
-	// New keyword scheme: use 'auth<mechanism>' in EHLO hostname to restrict mechanisms.
-	if strings.Contains(hostname, "authplain") {
-		return "PLAIN"
+// getAuthMechanisms returns auth mechanisms string based on capability parts.
+// If multiple auth options are provided, the last one takes precedence.
+func (s *Session) getAuthMechanisms(parts []string) string {
+	// Check all parts and use the last matching auth mechanism
+	lastAuth := ""
+	for _, part := range parts {
+		part = strings.ToLower(part)
+		if strings.Contains(part, "authplain") {
+			lastAuth = "PLAIN"
+		} else if strings.Contains(part, "authlogin") {
+			lastAuth = "LOGIN"
+		} else if strings.Contains(part, "authcram") {
+			lastAuth = "CRAM-MD5 CRAM-SHA256"
+		} else if strings.Contains(part, "authoauth") {
+			lastAuth = "XOAUTH2"
+		}
 	}
-	if strings.Contains(hostname, "authlogin") {
-		return "LOGIN"
-	}
-	if strings.Contains(hostname, "authcram") {
-		return "CRAM-MD5 CRAM-SHA256"
-	}
-	if strings.Contains(hostname, "authoauth") {
-		return "XOAUTH2"
+
+	// If an auth mechanism was specified, return it
+	if lastAuth != "" {
+		return lastAuth
 	}
 
 	// Default: all mechanisms

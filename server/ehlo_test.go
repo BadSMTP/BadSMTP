@@ -83,14 +83,19 @@ func doEhloClient(t *testing.T, client net.Conn, hostname string) *EHLOClient {
 		if strings.HasPrefix(line, "250-") || strings.HasPrefix(line, "250 ") {
 			// trim leading code and optional dash/space
 			body := strings.TrimSpace(line[4:])
-			if strings.Contains(body, " ") {
-				parts := strings.SplitN(body, " ", 2)
-				k := strings.ToUpper(parts[0])
-				v := ""
-				if len(parts) == 2 {
-					v = parts[1]
+			if body != "" && body != "OK" {
+				if strings.Contains(body, " ") {
+					parts := strings.SplitN(body, " ", 2)
+					k := strings.ToUpper(parts[0])
+					v := ""
+					if len(parts) == 2 {
+						v = parts[1]
+					}
+					ext[k] = v
+				} else {
+					// Extension without value (e.g., 8BITMIME, PIPELINING)
+					ext[strings.ToUpper(body)] = ""
 				}
-				ext[k] = v
 			}
 			if strings.HasPrefix(line, "250 ") {
 				break
@@ -186,5 +191,152 @@ func TestAuthMechanismKeywords(t *testing.T) {
 				t.Fatalf("EHLO %s AUTH=%q does not contain %q", c.host, val, c.want)
 			}
 		}()
+	}
+}
+
+// testCapabilityParser is a test implementation of CapabilityParser
+// that demonstrates extracting custom data from capability parts.
+// This is just an example - real extensions would implement their own parsing logic.
+type testCapabilityParser struct{}
+
+func (p *testCapabilityParser) ParseCapabilities(_ string, parts []string) ([]string, map[string]interface{}) {
+	metadata := make(map[string]interface{})
+	newParts := []string{}
+
+	// Example: Extract parts starting with "xtoken" (DNS-compatible, no underscores)
+	// Real extensions would use their own prefixes and parsing logic
+	for _, part := range parts {
+		if strings.HasPrefix(part, "xtoken") {
+			// Extract the token value after the prefix
+			token := strings.TrimPrefix(part, "xtoken")
+			metadata["auth_token"] = token
+		} else {
+			// Keep non-token parts for capability processing
+			newParts = append(newParts, part)
+		}
+	}
+
+	return newParts, metadata
+}
+
+func TestCapabilityParserExtension(t *testing.T) {
+	// Test that extensions can parse and extract custom data from EHLO hostname
+
+	// Create session with custom parser
+	client, serverConn := connPair()
+	cfg := &Config{Port: 2525}
+	cfg.EnsureDefaults()
+	cfg.CapabilityParser = &testCapabilityParser{}
+
+	sess := NewSession(serverConn, cfg, nil)
+	go func() { _ = sess.Handle() }()
+	defer func() { client.Close(); serverConn.Close(); time.Sleep(10 * time.Millisecond) }()
+
+	// Send EHLO with custom token part and capabilities (DNS-compatible, no underscores)
+	cli := doEhloClient(t, client, "xtoken9abc123xyz-size50000-authplain.example.com")
+	defer cli.Close()
+
+	// Verify capabilities were processed correctly (token part removed)
+	if ok, val := cli.Extension("SIZE"); !ok || val != "50000" {
+		t.Fatalf("SIZE extension not set correctly, got: %v", val)
+	}
+
+	if ok, val := cli.Extension("AUTH"); !ok || !strings.Contains(val, "PLAIN") {
+		t.Fatalf("AUTH extension not set correctly, got: %v", val)
+	}
+
+	// Verify token was extracted to session metadata
+	if sess.metadata == nil {
+		t.Fatal("Session metadata not initialized")
+	}
+
+	token, ok := sess.metadata["auth_token"]
+	if !ok {
+		t.Fatal("auth_token not found in session metadata")
+	}
+
+	if token != "9abc123xyz" {
+		t.Fatalf("Expected token '9abc123xyz', got: %v", token)
+	}
+}
+
+func TestCombinedCapabilityLabels(t *testing.T) {
+	// Test combined capability labels using dash-separated format
+	cases := []struct {
+		host           string
+		wantSize       string
+		want8BitMIME   bool
+		wantAuthSubstr string
+		wantPipelining bool
+	}{
+		{
+			host:           "size10000-no8bit-authplain.example.com",
+			wantSize:       "10000",
+			want8BitMIME:   false,
+			wantAuthSubstr: "PLAIN",
+			wantPipelining: true,
+		},
+		{
+			host:           "nosize-nopipelining-authlogin.example.com",
+			wantSize:       "",
+			want8BitMIME:   true,
+			wantAuthSubstr: "LOGIN",
+			wantPipelining: false,
+		},
+		{
+			host:           "size50000-authcram-nopipelining.example.com",
+			wantSize:       "50000",
+			want8BitMIME:   true,
+			wantAuthSubstr: "CRAM-MD5",
+			wantPipelining: false,
+		},
+		{
+			// Test that last auth option takes precedence
+			host:           "authplain-authoauth.example.com",
+			wantSize:       "10485760",
+			want8BitMIME:   true,
+			wantAuthSubstr: "XOAUTH2",
+			wantPipelining: true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.host, func(t *testing.T) {
+			client, cleanup := startSession(t)
+			defer cleanup()
+
+			cli := doEhloClient(t, client, c.host)
+			defer cli.Close()
+
+			// Check SIZE extension
+			if c.wantSize != "" {
+				if ok, val := cli.Extension("SIZE"); !ok {
+					t.Fatalf("EHLO %s did not advertise SIZE", c.host)
+				} else if val != c.wantSize {
+					t.Fatalf("EHLO %s advertised SIZE=%s, want %s", c.host, val, c.wantSize)
+				}
+			} else {
+				if ok, _ := cli.Extension("SIZE"); ok {
+					t.Fatalf("EHLO %s advertised SIZE but should not", c.host)
+				}
+			}
+
+			// Check 8BITMIME extension
+			if has8bit, _ := cli.Extension("8BITMIME"); has8bit != c.want8BitMIME {
+				t.Fatalf("EHLO %s 8BITMIME=%v, want %v", c.host, has8bit, c.want8BitMIME)
+			}
+
+			// Check AUTH extension
+			if ok, val := cli.Extension("AUTH"); !ok {
+				t.Fatalf("EHLO %s did not advertise AUTH", c.host)
+			} else if !strings.Contains(val, c.wantAuthSubstr) {
+				t.Fatalf("EHLO %s AUTH=%q does not contain %q", c.host, val, c.wantAuthSubstr)
+			}
+
+			// Check PIPELINING extension
+			if hasPipelining, _ := cli.Extension("PIPELINING"); hasPipelining != c.wantPipelining {
+				t.Fatalf("EHLO %s PIPELINING=%v, want %v", c.host, hasPipelining, c.wantPipelining)
+			}
+		})
 	}
 }

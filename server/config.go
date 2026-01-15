@@ -215,11 +215,12 @@ type Config struct {
 
 	// Extensions: Pluggable architecture for extending functionality
 	// These interfaces allow external packages to extend functionality
-	MessageStore  MessageStore    `mapstructure:"-"` // Where messages are stored (default: local files)
-	Authenticator Authenticator   `mapstructure:"-"` // How users authenticate (default: goodauth/badauth patterns)
-	Authorizer    Authorizer      `mapstructure:"-"` // What authenticated users can do (default: allow all)
-	RateLimiter   RateLimiter     `mapstructure:"-"` // Connection/message rate limiting (default: no limits)
-	Observer      SessionObserver `mapstructure:"-"` // Session event notifications (default: no-op)
+	MessageStore      MessageStore       `mapstructure:"-"` // Where messages are stored (default: local files)
+	Authenticator     Authenticator      `mapstructure:"-"` // How users authenticate (default: goodauth/badauth patterns)
+	Authorizer        Authorizer         `mapstructure:"-"` // What authenticated users can do (default: allow all)
+	RateLimiter       RateLimiter        `mapstructure:"-"` // Connection/message rate limiting (default: no limits)
+	Observer          SessionObserver    `mapstructure:"-"` // Session event notifications (default: no-op)
+	CapabilityParser  CapabilityParser   `mapstructure:"-"` // EHLO hostname capability parsing (default: pass-through)
 
 	// Logging configuration
 	LogConfig logging.LogConfig `mapstructure:"-"`
@@ -291,6 +292,9 @@ func (c *Config) ensureExtensionDefaults() {
 	}
 	if c.Observer == nil {
 		c.Observer = &NoOpObserver{}
+	}
+	if c.CapabilityParser == nil {
+		c.CapabilityParser = NewDefaultCapabilityParser()
 	}
 }
 

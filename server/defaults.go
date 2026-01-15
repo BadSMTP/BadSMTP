@@ -249,3 +249,17 @@ func (a *AllowAllAuthorizer) CanSendTo(_ *User, _ string) bool { return true }
 
 // GetQuota returns unlimited quota (-1).
 func (a *AllowAllAuthorizer) GetQuota(_ *User) int64 { return -1 }
+
+// DefaultCapabilityParser is a pass-through parser that doesn't modify capability parts.
+// Extensions can provide custom implementations to extract tokens or custom data.
+type DefaultCapabilityParser struct{}
+
+// NewDefaultCapabilityParser creates a default capability parser.
+func NewDefaultCapabilityParser() *DefaultCapabilityParser {
+	return &DefaultCapabilityParser{}
+}
+
+// ParseCapabilities returns the parts unchanged with empty metadata (default behaviour).
+func (p *DefaultCapabilityParser) ParseCapabilities(_ string, parts []string) ([]string, map[string]interface{}) {
+	return parts, make(map[string]interface{})
+}
