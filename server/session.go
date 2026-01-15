@@ -521,8 +521,8 @@ func (s *Session) addStandardCapabilities(response *[]string, parts []string) {
 		*response = append(*response, fmt.Sprintf("%d-PIPELINING", smtp.Code250))
 	}
 
-	// STARTTLS - enabled by default if TLS is available
-	s.capabilities.STARTTLS = !hasCapability(parts, "nostarttls") && s.config.HasTLS()
+	// STARTTLS - enabled by default if TLS is available and not already active
+	s.capabilities.STARTTLS = !hasCapability(parts, "nostarttls") && s.config.HasTLS() && s.tlsState == nil
 	if s.capabilities.STARTTLS {
 		*response = append(*response, fmt.Sprintf("%d-STARTTLS", smtp.Code250))
 	}
