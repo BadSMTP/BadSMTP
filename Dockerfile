@@ -53,9 +53,8 @@ USER badsmtp
 # - 25587: STARTTLS test port
 # - 3000-3099: Greeting delays
 # - 4000-4099: Connection drop delays
-# - 5000-5099: Inter-command delays
 # - 6000: Immediate connection drop
-EXPOSE 2525 25465 25587 3000-3099 4000-4099 5000-5099 6000
+EXPOSE 2525 25465 25587 3000-3099 4000-4099 6000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

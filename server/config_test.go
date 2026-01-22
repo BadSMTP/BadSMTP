@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/tls"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -19,9 +20,6 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if config.GreetingDelayPortStart != 3000 {
 		t.Errorf("Expected default greeting delay port start 3000, got %d", config.GreetingDelayPortStart)
-	}
-	if config.CommandDelayPortStart != 4000 {
-		t.Errorf("Expected default command delay port start 4000, got %d", config.CommandDelayPortStart)
 	}
 	if config.DropDelayPortStart != 5000 {
 		t.Errorf("Expected default drop delay port start 5000, got %d", config.DropDelayPortStart)
@@ -40,7 +38,6 @@ func TestLoadConfig(t *testing.T) {
 func TestConfigAnalysePortBehaviour(t *testing.T) {
 	config := &Config{
 		GreetingDelayPortStart: 3000,
-		CommandDelayPortStart:  4000,
 		DropDelayPortStart:     5000,
 		ImmediateDropPort:      6000,
 	}
@@ -48,24 +45,22 @@ func TestConfigAnalysePortBehaviour(t *testing.T) {
 	tests := []struct {
 		port              int
 		expectedGreeting  int
-		expectedCommand   int
 		expectedDrop      int
 		expectedImmediate bool
 	}{
-		{3000, 0, 0, 0, false},   // Greeting delay start
-		{3005, 50, 0, 0, false},  // Greeting delay 50s
-		{4000, 0, 0, 0, false},   // Command delay start
-		{4010, 0, 100, 0, false}, // Command delay 100s
-		{5000, 0, 0, 0, false},   // Drop delay start
-		{5015, 0, 0, 150, false}, // Drop delay 150s
-		{6000, 0, 0, 0, true},    // Immediate drop
-		{2525, 0, 0, 0, false},   // Normal port
+		{3000, 0, 0, false},   // Greeting delay start
+		{3005, 50, 0, false},  // Greeting delay 50s
+		{4000, 0, 0, false},   // Normal behaviour (command-delay ports removed)
+		{4010, 0, 0, false},   // Normal behaviour
+		{5000, 0, 0, false},   // Drop delay start
+		{5015, 0, 150, false}, // Drop delay 150s
+		{6000, 0, 0, true},    // Immediate drop
+		{2525, 0, 0, false},   // Normal port
 	}
 
 	for _, test := range tests {
 		config.Port = test.port
 		config.GreetingDelay = 0
-		config.CommandDelay = 0
 		config.DropDelay = 0
 		config.DropImmediate = false
 
@@ -73,9 +68,6 @@ func TestConfigAnalysePortBehaviour(t *testing.T) {
 
 		if config.GreetingDelay != test.expectedGreeting {
 			t.Errorf("Port %d: expected greeting delay %d, got %d", test.port, test.expectedGreeting, config.GreetingDelay)
-		}
-		if config.CommandDelay != test.expectedCommand {
-			t.Errorf("Port %d: expected command delay %d, got %d", test.port, test.expectedCommand, config.CommandDelay)
 		}
 		if config.DropDelay != test.expectedDrop {
 			t.Errorf("Port %d: expected drop delay %d, got %d", test.port, test.expectedDrop, config.DropDelay)
@@ -89,7 +81,6 @@ func TestConfigAnalysePortBehaviour(t *testing.T) {
 func TestGetBehaviourDescription(t *testing.T) {
 	config := &Config{
 		GreetingDelayPortStart: 3000,
-		CommandDelayPortStart:  4000,
 		DropDelayPortStart:     5000,
 		ImmediateDropPort:      6000,
 	}
@@ -99,7 +90,7 @@ func TestGetBehaviourDescription(t *testing.T) {
 		expected string
 	}{
 		{3005, "Greeting delay: 50s"},
-		{4010, "Command delay: 100s"},
+		{4010, "Normal behaviour"},
 		{5015, "Drop with delay: 150s"},
 		{6000, "Immediate drop"},
 		{2525, "Normal behaviour"},
@@ -183,7 +174,6 @@ func TestConfigWithEnvironmentVariables(t *testing.T) {
 		"BADSMTP_PORT":                   "3000",
 		"BADSMTP_MAILBOXDIR":             "/tmp/test-mailbox",
 		"BADSMTP_GREETINGDELAYPORTSTART": "4000",
-		"BADSMTP_COMMANDDELAYPORTSTART":  "5000",
 		"BADSMTP_DROPDELAYPORTSTART":     "6000",
 		"BADSMTP_IMMEDIATEDROPPORT":      "7000",
 		"BADSMTP_TLSCERTFILE":            "/path/to/cert.pem",
@@ -265,5 +255,69 @@ func TestTLSCertificateValidation(t *testing.T) {
 		if len(tlsConfig.Certificates) == 0 {
 			t.Errorf("TLS config has no certificates for hostname '%s'", hostname)
 		}
+	}
+}
+
+func TestValidatePortConfiguration(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *Config
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "Valid configuration",
+			config: &Config{
+				Port:                   2525,
+				GreetingDelayPortStart: 3000,
+				DropDelayPortStart:     5000,
+				ImmediateDropPort:      6000,
+				TLSPort:                25465,
+				STARTTLSPort:           25587,
+			},
+			expectError: false,
+		},
+		{
+			name: "Overlapping greeting and drop delay ranges",
+			config: &Config{
+				Port:                   2525,
+				GreetingDelayPortStart: 3000,
+				DropDelayPortStart:     3050, // Overlaps with greeting delay (3000-3099)
+				ImmediateDropPort:      6000,
+				TLSPort:                25465,
+				STARTTLSPort:           25587,
+			},
+			expectError: true,
+			errorMsg:    "port ranges overlap",
+		},
+		{
+			name: "TLS port conflicts with greeting delay range",
+			config: &Config{
+				Port:                   2525,
+				GreetingDelayPortStart: 3000,
+				DropDelayPortStart:     5000,
+				ImmediateDropPort:      6000,
+				TLSPort:                3050, // Inside greeting delay range (3000-3099)
+				STARTTLSPort:           25587,
+				TLSCertFile:            "/path/to/cert.pem",
+				TLSKeyFile:             "/path/to/key.pem",
+			},
+			expectError: true,
+			errorMsg:    "TLS port",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.config.ValidatePortConfiguration()
+			if (err != nil) != test.expectError {
+				t.Errorf("Expected error: %v, got: %v", test.expectError, err)
+			}
+			if err != nil && test.errorMsg != "" {
+				if !strings.Contains(err.Error(), test.errorMsg) {
+					t.Errorf("Expected error message to contain '%s', got: '%s'", test.errorMsg, err.Error())
+				}
+			}
+		})
 	}
 }

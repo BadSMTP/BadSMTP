@@ -190,13 +190,11 @@ type Config struct {
 	MailboxDir    string `mapstructure:"mailbox_dir"`
 	ListenAddress string `mapstructure:"listen_address"` // new: IP to bind listeners to
 	GreetingDelay int    `mapstructure:"greeting_delay"`
-	CommandDelay  int    `mapstructure:"command_delay"`
 	DropDelay     int    `mapstructure:"drop_delay"`
 	DropImmediate bool   `mapstructure:"drop_immediate"`
 
 	// Port range configurations
 	GreetingDelayPortStart int `mapstructure:"greeting_delay_port_start"`
-	CommandDelayPortStart  int `mapstructure:"command_delay_port_start"`
 	DropDelayPortStart     int `mapstructure:"drop_delay_port_start"`
 	ImmediateDropPort      int `mapstructure:"immediate_drop_port"`
 
@@ -248,9 +246,6 @@ func (c *Config) ensureScalarDefaults() {
 	}
 	if c.GreetingDelayPortStart == 0 {
 		c.GreetingDelayPortStart = DefaultGreetingDelayStart
-	}
-	if c.CommandDelayPortStart == 0 {
-		c.CommandDelayPortStart = DefaultCommandDelayStart
 	}
 	if c.DropDelayPortStart == 0 {
 		c.DropDelayPortStart = DefaultDropDelayStart
@@ -426,11 +421,6 @@ func (c *Config) AnalysePortBehaviour() {
 		c.GreetingDelay = (port - c.GreetingDelayPortStart) * DelayMultiplier
 	}
 
-	// Command delay: configurable range (default 4000-4099)
-	if port >= c.CommandDelayPortStart && port < c.CommandDelayPortStart+100 {
-		c.CommandDelay = (port - c.CommandDelayPortStart) * DelayMultiplier
-	}
-
 	// Drop with delay: configurable range (default 5000-5099)
 	if port >= c.DropDelayPortStart && port < c.DropDelayPortStart+100 {
 		c.DropDelay = (port - c.DropDelayPortStart) * DelayMultiplier
@@ -450,9 +440,6 @@ func (c *Config) GetBehaviourDescription() string {
 	case port >= c.GreetingDelayPortStart && port < c.GreetingDelayPortStart+100:
 		delay := (port - c.GreetingDelayPortStart) * DelayMultiplier
 		return fmt.Sprintf("Greeting delay: %ds", delay)
-	case port >= c.CommandDelayPortStart && port < c.CommandDelayPortStart+100:
-		delay := (port - c.CommandDelayPortStart) * DelayMultiplier
-		return fmt.Sprintf("Command delay: %ds", delay)
 	case port >= c.DropDelayPortStart && port < c.DropDelayPortStart+100:
 		delay := (port - c.DropDelayPortStart) * DelayMultiplier
 		return fmt.Sprintf("Drop with delay: %ds", delay)
@@ -472,7 +459,6 @@ func (c *Config) ValidatePortConfiguration() error {
 
 	// Add port ranges
 	validator.AddRange(NewPortRange("greeting delay", c.GreetingDelayPortStart, PortRangeSize))
-	validator.AddRange(NewPortRange("command delay", c.CommandDelayPortStart, PortRangeSize))
 	validator.AddRange(NewPortRange("drop delay", c.DropDelayPortStart, PortRangeSize))
 
 	// Add individual ports
@@ -517,7 +503,6 @@ func LoadConfig() (*Config, error) {
 	intEnvMap := map[string]*int{
 		"BADSMTP_PORT":                   &cfg.Port,
 		"BADSMTP_GREETINGDELAYPORTSTART": &cfg.GreetingDelayPortStart,
-		"BADSMTP_COMMANDDELAYPORTSTART":  &cfg.CommandDelayPortStart,
 		"BADSMTP_DROPDELAYPORTSTART":     &cfg.DropDelayPortStart,
 		"BADSMTP_IMMEDIATEDROPPORT":      &cfg.ImmediateDropPort,
 		"BADSMTP_TLSPORT":                &cfg.TLSPort,

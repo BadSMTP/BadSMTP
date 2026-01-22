@@ -20,10 +20,6 @@ listen_address: "127.0.0.1"
 # Ports 3000-3099 introduce delays of (port-3000)*10 seconds before greeting
 greeting_delay_port_start: 3000
 
-# Starting port for command delay range (default: 4000)
-# Ports 4000-4099 introduce delays of (port-4000)*10 seconds after each command
-command_delay_port_start: 4000
-
 # Starting port for drop delay range (default: 5000)
 # Ports 5000-5099 drop connection after (port-5000)*10 seconds
 drop_delay_port_start: 5000

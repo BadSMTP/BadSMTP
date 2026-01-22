@@ -85,6 +85,9 @@ type Session struct {
 	capabilities  Capabilities           // SMTP extensions enabled for this session
 	metadata      map[string]interface{} // Custom metadata from extensions (e.g., parsed tokens from EHLO hostname)
 
+	// Per-session command delay in seconds (set by EHLO dlay<N>)
+	commandDelay int
+
 	// Pipelining support
 	responseQueue  []string // Buffer for pipelined responses
 	pipeliningMode bool     // Whether currently processing pipelined commands
@@ -191,10 +194,10 @@ func (s *Session) runCommandLoop() error {
 			continue
 		}
 
-		// Apply command delay if configured
-		if s.config.CommandDelay > 0 {
-			s.logger.LogBehaviourTriggered("command_delay", s.config.Port, s.config.CommandDelay)
-			time.Sleep(time.Duration(s.config.CommandDelay) * time.Second)
+		// Apply per-session command delay if configured
+		if s.commandDelay > 0 {
+			s.logger.LogBehaviourTriggered("command_delay", s.config.Port, s.commandDelay)
+			time.Sleep(time.Duration(s.commandDelay) * time.Second)
 		}
 
 		// Detect whether the client is pipelining: if the server supports PIPELINING
@@ -456,15 +459,37 @@ func (s *Session) handleEhlo(hostname string) error {
 		return s.writeResponse("502 Command not implemented")
 	}
 
-	response := s.buildEhloResponse(hostname)
+	// Extract 'dlay' capability if present (format: dlay<digits>)
+	for i := 0; i < len(parts); i++ {
+		p := parts[i]
+		if strings.HasPrefix(p, "dlay") {
+			v := parseDlayValue(p)
+			if v <= 0 {
+				// ignore zero/invalid
+				parts = append(parts[:i], parts[i+1:]...)
+				i--
+				continue
+			}
+			// Apply to this session's per-session delay
+			s.commandDelay = v
+			// Remove this part from advertised capabilities
+			parts = append(parts[:i], parts[i+1:]...)
+			// Log and sleep before sending EHLO response
+			s.logger.LogBehaviourTriggered("command_delay", s.config.Port, v)
+			time.Sleep(time.Duration(v) * time.Second)
+			// adjust index since we removed current element
+			i--
+		}
+	}
+
+	response := s.buildEhloResponseFromParts(hostname, parts)
 	return s.writeResponse(strings.Join(response, "\r\n"))
 }
 
-// buildEhloResponse constructs the EHLO response lines for a given hostname.
-func (s *Session) buildEhloResponse(hostname string) []string {
-	// Parse capability label from hostname (leftmost label before first dot, split by dashes)
-	parts := parseCapabilityLabel(hostname)
-
+// buildEhloResponseFromParts constructs the EHLO response lines using pre-parsed parts.
+// This is a small refactor to allow handleEhlo to modify parts (e.g., remove dlay) before
+// passing to capability parser and building the response.
+func (s *Session) buildEhloResponseFromParts(hostname string, parts []string) []string {
 	// Call extension hook to allow custom parsing and metadata extraction
 	if s.config.CapabilityParser != nil {
 		modifiedParts, metadata := s.config.CapabilityParser.ParseCapabilities(hostname, parts)
@@ -486,6 +511,13 @@ func (s *Session) buildEhloResponse(hostname string) []string {
 	// Final line without dash
 	response = append(response, fmt.Sprintf("%d OK", smtp.Code250))
 	return response
+}
+
+// buildEhloResponse is retained for compatibility with existing code/tests.
+// It parses capability parts from the hostname and delegates to buildEhloResponseFromParts.
+func (s *Session) buildEhloResponse(hostname string) []string {
+	parts := parseCapabilityLabel(hostname)
+	return s.buildEhloResponseFromParts(hostname, parts)
 }
 
 // addStandardCapabilities adds all standard SMTP capabilities to the EHLO response.
@@ -1319,6 +1351,10 @@ const (
 	// maxWriteDeadline is the maximum write deadline used when trying to notify clients
 	// during shutdown; this bounds per-session write waits.
 	maxWriteDeadline = 5 * time.Second
+
+	// MaxInterCommandDelay is the maximum allowed inter-command delay in seconds.
+	// The SMTP spec allows up to 10 minutes (600s); we clamp to 605s as a small buffer.
+	MaxInterCommandDelay = 605
 )
 
 // formatErrorResult returns the proper SMTP response string for an ErrorResult
@@ -1419,4 +1455,32 @@ func (s *Session) readBDATChunk(n int) ([]byte, error) {
 		}
 	}
 	return buf, nil
+}
+
+// parseDlayValue extracts and parses the dlay value from a capability part.
+// part is expected to start with "dlay" followed by digits
+func parseDlayValue(part string) int {
+	// part is expected to start with "dlay" followed by digits
+	if !strings.HasPrefix(part, "dlay") {
+		return 0
+	}
+	numStr := strings.TrimPrefix(part, "dlay")
+	if numStr == "" {
+		return 0
+	}
+	v, err := strconv.Atoi(numStr)
+	if err != nil {
+		return 0
+	}
+	// Clamp to allowed range 0..MaxInterCommandDelay
+	if v < 0 {
+		return 0
+	}
+	if v > MaxInterCommandDelay {
+		return MaxInterCommandDelay
+	}
+	if v == 0 {
+		return 0
+	}
+	return v
 }

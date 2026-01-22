@@ -90,7 +90,6 @@ tls_port: 25465
 starttls_port: 25587
 
 greeting_delay_port_start: 3000
-command_delay_port_start: 4000
 drop_delay_port_start: 5000
 immediate_drop_port: 6000
 ```
@@ -132,8 +131,6 @@ Use different ports to simulate various connection issues:
   - Port 3000: No delay
   - Port 3001: 10-second delay
   - Port 3099: 990-second delay
-- **Ports 4000-4099**: Command delay of `(port - 4000) * 10` seconds
-  - Applied after each SMTP command
 - **Ports 5000-5099**: Drop connection after `(port - 5000) * 10` seconds
   - Port 5000: Drop immediately after delay
   - Port 5001: Drop after 10 seconds
@@ -318,6 +315,16 @@ This format is specifically designed to be compatible with DNS, a single-level w
 - `size<digits>` — Sets custom SIZE limit (e.g., `size10000` = 10,000 bytes)
 - `nosize` — Disables SIZE extension
 - Value range: 1,000 (1 KiB) to 10,000,000 (10 MiB)
+
+#### Inter-command delays
+
+- To request an inter-command delay for a session, include a `dlay<N>` label in the `EHLO` hostname parameter. Example:
+
+  ```
+  EHLO dlay300.example.com
+  ```
+
+This requests a 300-second delay before the `EHLO` response and before any subsequent commands in that session. Requested values are clamped to valid integers in the range 1..605 seconds (RFCs mandate 10 minutes for command timeouts). If the value is zero, negative, or invalid, it is ignored and no delay is applied.
 
 #### Extension Toggles
 - `no8bit` — Disables 8BITMIME extension

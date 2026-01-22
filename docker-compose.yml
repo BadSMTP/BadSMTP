@@ -9,7 +9,6 @@ services:
       - "25587:25587"         # STARTTLS test port
       - "3000-3099:3000-3099" # Greeting delays
       - "4000-4099:4000-4099" # Connection drop delays
-      - "5000-5099:5000-5099" # Inter-command delays
       - "6000:6000"           # Drop connection immediately
     volumes:
       - ./mailbox:/app/mailbox
@@ -61,7 +60,6 @@ services:
       - "25587:25587"
       - "3000-3099:3000-3099"
       - "4000-4099:4000-4099"
-      - "5000-5099:5000-5099"
       - "6000:6000"
     volumes:
       - .:/app

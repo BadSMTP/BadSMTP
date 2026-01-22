@@ -85,7 +85,6 @@ func TestSMTPIntegration(t *testing.T) {
 		Port:                   0, // Use ephemeral port
 		MailboxDir:             tempDir,
 		GreetingDelayPortStart: 13000,
-		CommandDelayPortStart:  14000,
 		DropDelayPortStart:     15000,
 		ImmediateDropPort:      16000,
 		TLSPort:                25465,

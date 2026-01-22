@@ -378,11 +378,13 @@ func TestSessionWithMailbox(t *testing.T) {
 
 func TestSessionCommandDelay(t *testing.T) {
 	conn := newMockConn()
-	// Set delay to 1 second (the session code multiplies by time.Second)
-	config := &Config{Port: 4001, CommandDelay: 1} // 1 second delay for testing
+	// Set per-session delay to 1 second for testing
+	config := &Config{Port: 4001}
 	config.EnsureDefaults()
 
 	session := NewSession(conn, config, nil)
+	// apply per-session command delay
+	session.commandDelay = 1
 
 	start := time.Now()
 	conn.writeInput("EHLO client.example.com\r\n")

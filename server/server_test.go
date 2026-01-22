@@ -4,7 +4,6 @@ package server
 
 import (
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -12,7 +11,6 @@ func TestNewServer(t *testing.T) {
 	config := &Config{
 		Port:                   2525,
 		GreetingDelayPortStart: 3000,
-		CommandDelayPortStart:  4000,
 		DropDelayPortStart:     5000,
 		ImmediateDropPort:      6000,
 		TLSPort:                25465,
@@ -38,7 +36,6 @@ func TestNewServerWithMailbox(t *testing.T) {
 		Port:                   2525,
 		MailboxDir:             "/tmp/test-mailbox",
 		GreetingDelayPortStart: 3000,
-		CommandDelayPortStart:  4000,
 		DropDelayPortStart:     5000,
 		ImmediateDropPort:      6000,
 		TLSPort:                25465,
@@ -52,131 +49,6 @@ func TestNewServerWithMailbox(t *testing.T) {
 
 	if server.mailbox == nil {
 		t.Error("Expected mailbox to be initialised when mailbox directory is specified")
-	}
-}
-
-func TestValidatePortConfiguration(t *testing.T) {
-	tests := []struct {
-		name        string
-		config      *Config
-		expectError bool
-		errorMsg    string
-	}{
-		{
-			name: "Valid configuration",
-			config: &Config{
-				Port:                   2525,
-				GreetingDelayPortStart: 3000,
-				CommandDelayPortStart:  4000,
-				DropDelayPortStart:     5000,
-				ImmediateDropPort:      6000,
-				TLSPort:                25465,
-				STARTTLSPort:           25587,
-			},
-			expectError: false,
-		},
-		{
-			name: "Overlapping greeting and command delay ranges",
-			config: &Config{
-				Port:                   2525,
-				GreetingDelayPortStart: 3000,
-				CommandDelayPortStart:  3050, // Overlaps with greeting delay
-				DropDelayPortStart:     5000,
-				ImmediateDropPort:      6000,
-				TLSPort:                25465,
-				STARTTLSPort:           25587,
-			},
-			expectError: true,
-			errorMsg:    "port ranges overlap",
-		},
-		{
-			name: "Normal port conflicts with greeting delay range",
-			config: &Config{
-				Port:                   3050, // Within greeting delay range
-				GreetingDelayPortStart: 3000,
-				CommandDelayPortStart:  4000,
-				DropDelayPortStart:     5000,
-				ImmediateDropPort:      6000,
-				TLSPort:                25465,
-				STARTTLSPort:           25587,
-			},
-			expectError: true,
-			errorMsg:    "conflicts with greeting delay range",
-		},
-		{
-			name: "Normal port conflicts with immediate drop port",
-			config: &Config{
-				Port:                   6000, // Same as immediate drop port
-				GreetingDelayPortStart: 3000,
-				CommandDelayPortStart:  4000,
-				DropDelayPortStart:     5000,
-				ImmediateDropPort:      6000,
-				TLSPort:                25465,
-				STARTTLSPort:           25587,
-			},
-			expectError: true,
-			errorMsg:    "conflicts with immediate drop port",
-		},
-		{
-			name: "TLS port conflicts with command delay range",
-			config: &Config{
-				Port:                   2525,
-				GreetingDelayPortStart: 3000,
-				CommandDelayPortStart:  4000,
-				DropDelayPortStart:     5000,
-				ImmediateDropPort:      6000,
-				TLSPort:                4050, // Within command delay range
-				STARTTLSPort:           25587,
-				TLSCertFile:            "/path/to/cert.pem",
-				TLSKeyFile:             "/path/to/key.pem",
-			},
-			expectError: true,
-			errorMsg:    "TLS port",
-		},
-		{
-			name: "TLS and STARTTLS ports conflict",
-			config: &Config{
-				Port:                   2525,
-				GreetingDelayPortStart: 3000,
-				CommandDelayPortStart:  4000,
-				DropDelayPortStart:     5000,
-				ImmediateDropPort:      6000,
-				TLSPort:                25465,
-				STARTTLSPort:           25465, // Same as TLS port
-				TLSCertFile:            "/path/to/cert.pem",
-				TLSKeyFile:             "/path/to/key.pem",
-			},
-			expectError: true,
-			errorMsg:    "conflicts with STARTTLS port",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := validatePortConfiguration(test.config)
-
-			if test.expectError {
-				if err == nil {
-					t.Errorf("Expected error for %s, but got none", test.name)
-				} else if test.errorMsg != "" && err.Error() != "" {
-					// Check if error message contains expected text
-					found := false
-					for _, word := range []string{"overlap", "conflict"} {
-						if strings.Contains(err.Error(), word) {
-							found = true
-							break
-						}
-					}
-					if !found {
-						t.Errorf("Expected error message to contain relevant text, got: %s", err.Error())
-					}
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error for %s, but got: %v", test.name, err)
-				}
-			}
-		})
 	}
 }
 
@@ -210,7 +82,6 @@ func TestServerConfigDefaults(t *testing.T) {
 	config := &Config{
 		Port:                   2525,
 		GreetingDelayPortStart: 3000,
-		CommandDelayPortStart:  4000,
 		DropDelayPortStart:     5000,
 		ImmediateDropPort:      6000,
 		TLSPort:                25465,
@@ -248,7 +119,6 @@ func TestServerWithInvalidMailboxDir(t *testing.T) {
 		Port:                   2525,
 		MailboxDir:             fpath,
 		GreetingDelayPortStart: 3000,
-		CommandDelayPortStart:  4000,
 		DropDelayPortStart:     5000,
 		ImmediateDropPort:      6000,
 		TLSPort:                25465,
@@ -264,7 +134,6 @@ func TestServerWithInvalidMailboxDir(t *testing.T) {
 func TestPortBehaviourEdgeCases(t *testing.T) {
 	config := &Config{
 		GreetingDelayPortStart: 3000,
-		CommandDelayPortStart:  4000,
 		DropDelayPortStart:     5000,
 		ImmediateDropPort:      6000,
 	}
@@ -274,14 +143,14 @@ func TestPortBehaviourEdgeCases(t *testing.T) {
 		port     int
 		expected string
 	}{
-		{2999, "Normal behaviour"},     // Just before greeting delay range
-		{3000, "Greeting delay: 0s"},   // Start of greeting delay range
-		{3099, "Greeting delay: 990s"}, // End of greeting delay range
-		{3100, "Normal behaviour"},     // Just after greeting delay range
-		{3999, "Normal behaviour"},     // Just before command delay range
-		{4000, "Command delay: 0s"},    // Start of command delay range
-		{4099, "Command delay: 990s"},  // End of command delay range
-		{4100, "Normal behaviour"},     // Just after command delay range
+		{2999, "Normal behaviour"},      // Just before greeting delay range
+		{3000, "Greeting delay: 0s"},    // Start of greeting delay range
+		{3099, "Greeting delay: 990s"},  // End of greeting delay range
+		{3100, "Normal behaviour"},      // Just after greeting delay range
+		{3999, "Normal behaviour"},      // Just before drop delay range
+		{5000, "Drop with delay: 0s"},   // Start of drop delay range
+		{5099, "Drop with delay: 990s"}, // End of drop delay range
+		{5100, "Normal behaviour"},      // Just after drop delay range
 	}
 
 	for _, test := range edgeCases {

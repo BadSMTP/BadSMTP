@@ -126,7 +126,6 @@ func (s *Server) Start() error {
 
 	// Start all special behaviour ports
 	go s.startPortRangeListeners(s.config.GreetingDelayPortStart, PortRangeSize, "Greeting delay")
-	go s.startPortRangeListeners(s.config.CommandDelayPortStart, PortRangeSize, "Command delay")
 	go s.startPortRangeListeners(s.config.DropDelayPortStart, PortRangeSize, "Drop delay")
 	go s.startPortListener(s.config.ImmediateDropPort, "Immediate drop")
 
@@ -137,7 +136,6 @@ func (s *Server) Start() error {
 	s.logger.Info("BadSMTP server started",
 		logging.F("normal_port", s.config.Port),
 		logging.F("greeting_delay_ports", fmt.Sprintf("%d-%d", s.config.GreetingDelayPortStart, s.config.GreetingDelayPortStart+PortRangeEnd)),
-		logging.F("command_delay_ports", fmt.Sprintf("%d-%d", s.config.CommandDelayPortStart, s.config.CommandDelayPortStart+PortRangeEnd)),
 		logging.F("drop_delay_ports", fmt.Sprintf("%d-%d", s.config.DropDelayPortStart, s.config.DropDelayPortStart+PortRangeEnd)),
 		logging.F("immediate_drop_port", s.config.ImmediateDropPort),
 		logging.F("tls_port", s.config.TLSPort),
@@ -156,6 +154,16 @@ func (s *Server) startPortListener(port int, description string) {
 	addr := net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
+		// If the port is already in use, log a warning and skip starting this listener.
+		var warnErr bool
+		if errors.Is(err, syscall.EADDRINUSE) || strings.Contains(err.Error(), "address already in use") {
+			warnErr = true
+		}
+		if warnErr {
+			s.logger.Warn("Port already in use; skipping listener",
+				logging.F("port", port), logging.F("desc", description), logging.F("addr", addr))
+			return
+		}
 		s.logger.Error("Failed to listen on port",
 			fmt.Errorf("%v", err),
 			logging.F("port", port), logging.F("desc", description), logging.F("addr", addr))
@@ -165,9 +173,7 @@ func (s *Server) startPortListener(port int, description string) {
 	s.addListener(listener)
 	defer func() {
 		s.removeListener(listener)
-		if err := listener.Close(); err != nil {
-			s.logger.Debug("Error closing listener", logging.F("err", err))
-		}
+		// Defer only removes this listener record; actual Close is performed centrally
 	}()
 
 	s.logger.Info("Listening on port", logging.F("port", port), logging.F("desc", description), logging.F("addr", addr))
@@ -175,8 +181,10 @@ func (s *Server) startPortListener(port int, description string) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			// If the listener was closed as part of shutdown, then exit loop
-			if errors.Is(err, net.ErrClosed) {
+			// If the listener was closed as part of shutdown, then exit loop.
+			// Some implementations return an error whose message contains
+			// "use of closed network connection" instead of net.ErrClosed; treat both as closed.
+			if errors.Is(err, net.ErrClosed) || strings.Contains(err.Error(), "use of closed network connection") {
 				s.logger.Info("Listener closed, exiting accept loop", logging.F("port", port))
 				return
 			}
@@ -195,7 +203,9 @@ func (s *Server) startPortRangeListeners(startPort, count int, description strin
 	}
 }
 
-func (s *Server) startTLSPortListener(port int, description string) {
+// createTLSListener builds a tls.Config with dynamic certificate generation and
+// starts listening on the given port. It returns the listener or an error.
+func (s *Server) createTLSListener(port int) (net.Listener, error) {
 	// Create TLS configuration with dynamic certificate generation
 	tlsConfig := &tls.Config{
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
@@ -225,24 +235,57 @@ func (s *Server) startTLSPortListener(port int, description string) {
 	addr := net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))
 	listener, err := tls.Listen("tcp", addr, tlsConfig)
 	if err != nil {
-		s.logger.Error("Failed to listen on TLS port", err, logging.F("port", port), logging.F("desc", description), logging.F("addr", addr))
+		return nil, err
+	}
+	return listener, nil
+}
+
+func (s *Server) startTLSPortListener(port int, description string) {
+	// Create the listener using helper
+	listener, err := s.createTLSListener(port)
+	if err != nil {
+		// Handle address-in-use similarly to plain TCP listener
+		var warnErr bool
+		if errors.Is(err, syscall.EADDRINUSE) || strings.Contains(err.Error(), "address already in use") {
+			warnErr = true
+		}
+		if warnErr {
+			s.logger.Warn(
+				"TLS port already in use; skipping TLS listener",
+				logging.F("port", port),
+				logging.F("desc", description),
+				logging.F("addr", net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))),
+			)
+			return
+		}
+		s.logger.Error(
+			"Failed to listen on TLS port",
+			err,
+			logging.F("port", port),
+			logging.F("desc", description),
+			logging.F("addr", net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))),
+		)
 		return
 	}
+
 	// register listener for shutdown
 	s.addListener(listener)
 	defer func() {
 		s.removeListener(listener)
-		if closeErr := listener.Close(); closeErr != nil {
-			s.logger.Error("Error closing listener", closeErr)
-		}
+		// Defer only removes this listener record; listener.Close() will be called by Shutdown via closeAllListeners
 	}()
 
-	s.logger.Info("Listening on TLS port", logging.F("port", port), logging.F("desc", description), logging.F("addr", addr))
+	s.logger.Info(
+		"Listening on TLS port",
+		logging.F("port", port),
+		logging.F("desc", description),
+		logging.F("addr", net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))),
+	)
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
+			if errors.Is(err, net.ErrClosed) || strings.Contains(err.Error(), "use of closed network connection") {
 				s.logger.Info("TLS listener closed, exiting accept loop", logging.F("port", port))
 				return
 			}
@@ -403,7 +446,10 @@ func (s *Server) closeAllListeners() {
 	s.listenersMu.Unlock()
 	for _, l := range listeners {
 		if err := l.Close(); err != nil {
-			s.logger.Debug("Error closing listener in closeAllListeners", logging.F("err", err))
+			// Ignore expected "use of closed network connection" errors
+			if !errors.Is(err, net.ErrClosed) {
+				s.logger.Debug("Error closing listener in closeAllListeners", logging.F("err", err))
+			}
 		}
 	}
 }

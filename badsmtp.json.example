@@ -7,7 +7,6 @@
   "listen_address": "127.0.0.1",
 
   "greeting_delay_port_start": 3000,
-  "command_delay_port_start": 4000,
   "drop_delay_port_start": 5000,
   "immediate_drop_port": 6000,
 
