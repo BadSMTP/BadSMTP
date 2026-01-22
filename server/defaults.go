@@ -16,7 +16,7 @@ const (
 	defaultMaxMessagesPerMinute = 120
 
 	// ServerGreeting is the banner shown in the SMTP 220 greeting
-	ServerGreeting = "BadSMTP - The Reliably Unreliable Mail Server"
+	ServerGreeting = "BadSMTP - The Reliably Unreliable Mail Server https://badsmtp.com"
 )
 
 var (
