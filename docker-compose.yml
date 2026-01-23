@@ -7,9 +7,26 @@ services:
       - "2525:2525"           # Normal SMTP (default BadSMTP)
       - "25465:25465"         # Implicit TLS test port
       - "25587:25587"         # STARTTLS test port
-      - "3000-3099:3000-3099" # Greeting delays
-      - "4000-4099:4000-4099" # Connection drop delays
-      - "6000:6000"           # Drop connection immediately
+      - "25200:25200"         # Greeting delay offset 0 (0s)
+      - "25201:25201"         # Greeting delay offset 1 (1s)
+      - "25202:25202"         # Greeting delay offset 2 (2s)
+      - "25203:25203"         # Greeting delay offset 3 (8s)
+      - "25204:25204"         # Greeting delay offset 4 (10s)
+      - "25205:25205"         # Greeting delay offset 5 (30s)
+      - "25206:25206"         # Greeting delay offset 6 (60s)
+      - "25207:25207"         # Greeting delay offset 7 (120s)
+      - "25208:25208"         # Greeting delay offset 8 (300s)
+      - "25209:25209"         # Greeting delay offset 9 (600s)
+      - "25600:25600"         # Drop delay offset 0 (immediate drop)
+      - "25601:25601"         # Drop delay offset 1 (1s)
+      - "25602:25602"         # Drop delay offset 2 (2s)
+      - "25603:25603"         # Drop delay offset 3 (8s)
+      - "25604:25604"         # Drop delay offset 4 (10s)
+      - "25605:25605"         # Drop delay offset 5 (30s)
+      - "25606:25606"         # Drop delay offset 6 (60s)
+      - "25607:25607"         # Drop delay offset 7 (120s)
+      - "25608:25608"         # Drop delay offset 8 (300s)
+      - "25609:25609"         # Drop delay offset 9 (600s)
     volumes:
       - ./mailbox:/app/mailbox
       - ./badsmtp.env:/app/badsmtp.env
@@ -41,11 +58,11 @@ services:
         nc -z badsmtp 25465 || exit 1
         echo 'Testing STARTTLS connection (25587)...'
         nc -z badsmtp 25587 || exit 1
-        echo 'Testing delay-range representative ports (3000,4000,5000,6000)...'
-        nc -z badsmtp 3000 || exit 1
-        nc -z badsmtp 4000 || exit 1
-        nc -z badsmtp 5000 || exit 1
-        nc -z badsmtp 6000 || exit 1
+        echo 'Testing delay-range representative ports (25200,25203,25600,25603)...'
+        nc -z badsmtp 25200 || exit 1
+        nc -z badsmtp 25203 || exit 1
+        nc -z badsmtp 25600 || exit 1
+        nc -z badsmtp 25603 || exit 1
         echo 'All representative tests passed!'
       "
     networks:
@@ -58,9 +75,26 @@ services:
       - "2525:2525"
       - "25465:25465"
       - "25587:25587"
-      - "3000-3099:3000-3099"
-      - "4000-4099:4000-4099"
-      - "6000:6000"
+      - "25200:25200"
+      - "25201:25201"
+      - "25202:25202"
+      - "25203:25203"
+      - "25204:25204"
+      - "25205:25205"
+      - "25206:25206"
+      - "25207:25207"
+      - "25208:25208"
+      - "25209:25209"
+      - "25600:25600"
+      - "25601:25601"
+      - "25602:25602"
+      - "25603:25603"
+      - "25604:25604"
+      - "25605:25605"
+      - "25606:25606"
+      - "25607:25607"
+      - "25608:25608"
+      - "25609:25609"
     volumes:
       - .:/app
       - ./mailbox:/app/mailbox

@@ -23,9 +23,9 @@ import (
 
 const (
 	// PortRangeSize is the number of ports in each special behaviour range
-	PortRangeSize = 100
+	PortRangeSize = DelayCount
 	// PortRangeEnd is the last offset in a port range
-	PortRangeEnd = 99
+	PortRangeEnd = DelayCount - 1
 	// MinTLSVersion is the minimum TLS version supported by the server
 	MinTLSVersion = tls.VersionTLS12
 
@@ -124,20 +124,26 @@ func (s *Server) Start() error {
 	// Start normal behaviour port
 	go s.startPortListener(s.config.Port, "Normal behaviour")
 
-	// Start all special behaviour ports
+	// Start all special behaviour ports using discrete DelayOptions offsets
 	go s.startPortRangeListeners(s.config.GreetingDelayPortStart, PortRangeSize, "Greeting delay")
 	go s.startPortRangeListeners(s.config.DropDelayPortStart, PortRangeSize, "Drop delay")
-	go s.startPortListener(s.config.ImmediateDropPort, "Immediate drop")
 
 	// Start TLS ports (always available with self-signed certificates)
 	go s.startTLSPortListener(s.config.TLSPort, "Implicit TLS")
 	go s.startPortListener(s.config.STARTTLSPort, "STARTTLS")
 
+	// Log the started ports and ranges explicitly
+	gPorts := make([]int, 0, PortRangeSize)
+	dPorts := make([]int, 0, PortRangeSize)
+	for i := 0; i < PortRangeSize; i++ {
+		gPorts = append(gPorts, s.config.GreetingDelayPortStart+i)
+		dPorts = append(dPorts, s.config.DropDelayPortStart+i)
+	}
+
 	s.logger.Info("BadSMTP server started",
 		logging.F("normal_port", s.config.Port),
 		logging.F("greeting_delay_ports", fmt.Sprintf("%d-%d", s.config.GreetingDelayPortStart, s.config.GreetingDelayPortStart+PortRangeEnd)),
 		logging.F("drop_delay_ports", fmt.Sprintf("%d-%d", s.config.DropDelayPortStart, s.config.DropDelayPortStart+PortRangeEnd)),
-		logging.F("immediate_drop_port", s.config.ImmediateDropPort),
 		logging.F("tls_port", s.config.TLSPort),
 		logging.F("starttls_port", s.config.STARTTLSPort),
 		logging.F("log_level", s.config.LogConfig.Level.String()),
@@ -197,9 +203,12 @@ func (s *Server) startPortListener(port int, description string) {
 }
 
 func (s *Server) startPortRangeListeners(startPort, count int, description string) {
+	// Start only the discrete offsets defined in DelayOptions
 	for i := 0; i < count; i++ {
 		port := startPort + i
-		go s.startPortListener(port, fmt.Sprintf("%s (%ds)", description, i*DelayMultiplier))
+		delay := DelayOptions[i]
+		desc := fmt.Sprintf("%s (%ds)", description, delay)
+		go s.startPortListener(port, desc)
 	}
 }
 

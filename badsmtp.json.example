@@ -6,9 +6,8 @@
   "mailbox_dir": "./mailbox",
   "listen_address": "127.0.0.1",
 
-  "greeting_delay_port_start": 3000,
-  "drop_delay_port_start": 5000,
-  "immediate_drop_port": 6000,
+  "greeting_delay_port_start": 25200,
+  "drop_delay_port_start": 25600,
 
   "tls_port": 25465,
   "starttls_port": 25587,

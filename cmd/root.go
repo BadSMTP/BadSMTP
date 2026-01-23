@@ -90,9 +90,7 @@ func RegisterFlags() {
 
 	// Port range configurations
 	pf.Int("greeting-delay-port-start", server.DefaultGreetingDelayStart, "Starting port for greeting delays")
-	pf.Int("command-delay-port-start", server.DefaultCommandDelayStart, "Starting port for command delays")
 	pf.Int("drop-delay-port-start", server.DefaultDropDelayStart, "Starting port for drop delays")
-	pf.Int("immediate-drop-port", server.DefaultImmediateDropPort, "Port for immediate connection drop")
 
 	// TLS configuration
 	pf.String("tls-cert-file", "", "Path to TLS certificate file")

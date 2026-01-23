@@ -51,10 +51,9 @@ USER badsmtp
 # - 2525: Default SMTP port
 # - 25465: Implicit TLS test port
 # - 25587: STARTTLS test port
-# - 3000-3099: Greeting delays
-# - 4000-4099: Connection drop delays
-# - 6000: Immediate connection drop
-EXPOSE 2525 25465 25587 3000-3099 4000-4099 6000
+# - 25200..25209: Greeting delay representative ports (0s,1s,2s,8s,10s,30s,60s,120s,300s,600s)
+# - 25600..25609: Drop-with-delay representative ports (offset 0 is immediate drop)
+EXPOSE 2525 25465 25587 25200 25201 25202 25203 25204 25205 25206 25207 25208 25209 25600 25601 25602 25603 25604 25605 25606 25607 25608 25609
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

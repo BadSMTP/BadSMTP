@@ -25,13 +25,9 @@ const (
 	// It is above 1000 so it can be run as an unprivileged user.
 	DefaultPort = 2525
 	// DefaultGreetingDelayStart is the first port number in the range used to trigger greeting delays.
-	DefaultGreetingDelayStart = 3000
-	// DefaultCommandDelayStart is the first port number in the range used to trigger command delays.
-	DefaultCommandDelayStart = 4000
+	DefaultGreetingDelayStart = 25200
 	// DefaultDropDelayStart is the first port number in the range used to trigger delayed drops.
-	DefaultDropDelayStart = 5000
-	// DefaultImmediateDropPort is the port number that triggers an immediate drop without any delay. This is a single port, not a range start.
-	DefaultImmediateDropPort = 6000
+	DefaultDropDelayStart = 25600
 	// DefaultTLSPort is the port number to listen for implicit TLS connections (SMTPS).
 	DefaultTLSPort = 25465
 	// DefaultSTARTTLSPort is the port number to listen for STARTTLS connections (SMTP+STARTTLS).
@@ -43,12 +39,6 @@ const (
 	// CertValidityHours is the number of hours that a generated certificate is valid for.
 	CertValidityHours = 24
 
-	// MailboxDirPermissions defines the permissions for the mailbox directory.
-	MailboxDirPermissions = 0750
-
-	// DelayMultiplier is used to calculating delays by multiplying with port offsets within ranges (seconds per port offset).
-	DelayMultiplier = 10
-
 	// DefaultRSAKeySize is the default size for RSA keys used in self-signed certificates.
 	DefaultRSAKeySize = 2048
 
@@ -59,6 +49,13 @@ const (
 	// MaxScannerBuffer is the maximum buffer size for scanning input
 	MaxScannerBuffer = 64 * 1024
 )
+
+// DelayOptions is the discrete list of supported delays (seconds) mapped by offset within a behaviour base port.
+// Offsets: 0..9 -> delays {0s,1s,2s,8s,10s,30s,60s,120s,300s,600s}
+var DelayOptions = []int{0, 1, 2, 8, 10, 30, 60, 120, 300, 600}
+
+// DelayCount is the number of entries in DelayOptions
+const DelayCount = 10
 
 // PortRange represents a range of ports with validation capabilities.
 type PortRange struct {
@@ -196,7 +193,6 @@ type Config struct {
 	// Port range configurations
 	GreetingDelayPortStart int `mapstructure:"greeting_delay_port_start"`
 	DropDelayPortStart     int `mapstructure:"drop_delay_port_start"`
-	ImmediateDropPort      int `mapstructure:"immediate_drop_port"`
 
 	// TLS configuration
 	TLSCertFile  string `mapstructure:"tls_cert_file"`
@@ -249,9 +245,6 @@ func (c *Config) ensureScalarDefaults() {
 	}
 	if c.DropDelayPortStart == 0 {
 		c.DropDelayPortStart = DefaultDropDelayStart
-	}
-	if c.ImmediateDropPort == 0 {
-		c.ImmediateDropPort = DefaultImmediateDropPort
 	}
 	if c.TLSPort == 0 {
 		c.TLSPort = DefaultTLSPort
@@ -416,20 +409,23 @@ func (c *Config) GenerateSelfSignedCert(hostname string) (tls.Certificate, error
 func (c *Config) AnalysePortBehaviour() {
 	port := c.Port
 
-	// Greeting delay: configurable range (default 3000-3099)
-	if port >= c.GreetingDelayPortStart && port < c.GreetingDelayPortStart+100 {
-		c.GreetingDelay = (port - c.GreetingDelayPortStart) * DelayMultiplier
+	// Greeting delay: discrete options (default 25200..25209)
+	if port >= c.GreetingDelayPortStart && port < c.GreetingDelayPortStart+DelayCount {
+		offset := port - c.GreetingDelayPortStart
+		c.GreetingDelay = DelayOptions[offset]
 	}
 
-	// Drop with delay: configurable range (default 5000-5099)
-	if port >= c.DropDelayPortStart && port < c.DropDelayPortStart+100 {
-		c.DropDelay = (port - c.DropDelayPortStart) * DelayMultiplier
+	// Drop with delay: discrete options (default 25600..25609)
+	if port >= c.DropDelayPortStart && port < c.DropDelayPortStart+DelayCount {
+		offset := port - c.DropDelayPortStart
+		c.DropDelay = DelayOptions[offset]
+		// Treat offset 0 as immediate drop (0s)
+		if offset == 0 {
+			c.DropImmediate = true
+		}
 	}
 
-	// Drop immediately: configurable port (default 6000)
-	if port == c.ImmediateDropPort {
-		c.DropImmediate = true
-	}
+	// No separate ImmediateDropPort anymore; immediate drop represented by DropDelayPortStart + offset 0
 }
 
 // GetBehaviourDescription returns a human-readable description of the port behaviour.
@@ -437,14 +433,17 @@ func (c *Config) GetBehaviourDescription() string {
 	port := c.Port
 
 	switch {
-	case port >= c.GreetingDelayPortStart && port < c.GreetingDelayPortStart+100:
-		delay := (port - c.GreetingDelayPortStart) * DelayMultiplier
+	case port >= c.GreetingDelayPortStart && port < c.GreetingDelayPortStart+DelayCount:
+		offset := port - c.GreetingDelayPortStart
+		delay := DelayOptions[offset]
 		return fmt.Sprintf("Greeting delay: %ds", delay)
-	case port >= c.DropDelayPortStart && port < c.DropDelayPortStart+100:
-		delay := (port - c.DropDelayPortStart) * DelayMultiplier
+	case port >= c.DropDelayPortStart && port < c.DropDelayPortStart+DelayCount:
+		offset := port - c.DropDelayPortStart
+		delay := DelayOptions[offset]
+		if offset == 0 {
+			return "Immediate drop"
+		}
 		return fmt.Sprintf("Drop with delay: %ds", delay)
-	case port == c.ImmediateDropPort:
-		return "Immediate drop"
 	default:
 		return "Normal behaviour"
 	}
@@ -452,18 +451,17 @@ func (c *Config) GetBehaviourDescription() string {
 
 // ValidatePortConfiguration validates that all port configurations don't conflict
 func (c *Config) ValidatePortConfiguration() error {
-	// Note: PortRangeEnd constant is defined in server.go as 99
-	const PortRangeSize = 99
+	// The number of offsets used from each base start is DelayCount
+	const RangeSize = DelayCount - 1
 
 	validator := NewPortValidator()
 
-	// Add port ranges
-	validator.AddRange(NewPortRange("greeting delay", c.GreetingDelayPortStart, PortRangeSize))
-	validator.AddRange(NewPortRange("drop delay", c.DropDelayPortStart, PortRangeSize))
+	// Add port ranges (now small discrete ranges of DelayCount ports)
+	validator.AddRange(NewPortRange("greeting delay", c.GreetingDelayPortStart, RangeSize))
+	validator.AddRange(NewPortRange("drop delay", c.DropDelayPortStart, RangeSize))
 
 	// Add individual ports
 	validator.AddPort("normal", c.Port)
-	validator.AddPort("immediate drop", c.ImmediateDropPort)
 
 	// Add TLS ports if TLS is enabled
 	if c.HasTLS() {
@@ -472,7 +470,28 @@ func (c *Config) ValidatePortConfiguration() error {
 	}
 
 	// Run all validations
-	return validator.ValidateAll()
+	if err := validator.ValidateAll(); err != nil {
+		return err
+	}
+
+	// Enforce Option C: reject ports that fall into the old-style extended ranges but outside our lookup.
+	// If the user configures a normal server Port that lies within the previous wide ranges but outside the
+	// allowed DelayCount window, it's likely a misconfiguration.
+	// Check if server Port falls into greeting/drop ranges but offset >= DelayCount -> reject.
+	if c.Port >= c.GreetingDelayPortStart && c.Port < c.GreetingDelayPortStart+100 {
+		offset := c.Port - c.GreetingDelayPortStart
+		if offset >= DelayCount {
+			return fmt.Errorf("configured port %d is within greeting delay base but outside supported offsets 0..%d", c.Port, DelayCount-1)
+		}
+	}
+	if c.Port >= c.DropDelayPortStart && c.Port < c.DropDelayPortStart+100 {
+		offset := c.Port - c.DropDelayPortStart
+		if offset >= DelayCount {
+			return fmt.Errorf("configured port %d is within drop delay base but outside supported offsets 0..%d", c.Port, DelayCount-1)
+		}
+	}
+
+	return nil
 }
 
 // LoadConfig creates a Config populated from defaults and environment variables.
@@ -504,7 +523,6 @@ func LoadConfig() (*Config, error) {
 		"BADSMTP_PORT":                   &cfg.Port,
 		"BADSMTP_GREETINGDELAYPORTSTART": &cfg.GreetingDelayPortStart,
 		"BADSMTP_DROPDELAYPORTSTART":     &cfg.DropDelayPortStart,
-		"BADSMTP_IMMEDIATEDROPPORT":      &cfg.ImmediateDropPort,
 		"BADSMTP_TLSPORT":                &cfg.TLSPort,
 		"BADSMTP_STARTTLSPORT":           &cfg.STARTTLSPort,
 	}
@@ -518,16 +536,8 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 
-	// Load hostname mappings from environment variables like BADSMTP_HOSTNAME_MAPPING_<NAME>
+	// Load hostname mappings from env prefixed variables
 	loadHostnameMappingsViper(cfg)
-
-	// If mailbox directory was overridden, ensure MessageStore default uses it
-	if cfg.MessageStore == nil {
-		cfg.MessageStore = NewDefaultMessageStore(cfg.MailboxDir)
-	}
-
-	// Ensure extension defaults are set for any remaining nil interfaces
-	cfg.EnsureDefaults()
 
 	return cfg, nil
 }

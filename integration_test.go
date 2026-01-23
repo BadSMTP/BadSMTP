@@ -84,11 +84,10 @@ func TestSMTPIntegration(t *testing.T) {
 	config := &server.Config{
 		Port:                   0, // Use ephemeral port
 		MailboxDir:             tempDir,
-		GreetingDelayPortStart: 13000,
-		DropDelayPortStart:     15000,
-		ImmediateDropPort:      16000,
-		TLSPort:                25465,
-		STARTTLSPort:           25587,
+		GreetingDelayPortStart: server.DefaultGreetingDelayStart,
+		DropDelayPortStart:     server.DefaultDropDelayStart,
+		TLSPort:                server.DefaultTLSPort,
+		STARTTLSPort:           server.DefaultSTARTTLSPort,
 	}
 
 	// Create and start server
@@ -198,7 +197,7 @@ func testBasicSMTPSession(t *testing.T, port int) {
 		t.Fatalf("Failed to read greeting: %v", err)
 	}
 	if !strings.Contains(greeting, "220") {
-		t.Errorf("Expected 220 greeting, got: %s", greeting)
+		t.Fatalf("Expected 220 greeting, got: %s", greeting)
 	}
 
 	// Send EHLO

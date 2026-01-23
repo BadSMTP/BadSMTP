@@ -125,20 +125,31 @@ The IP address (and indirectly, the interface) the server binds to is configurab
 
 BadSMTP uses only ports above 1024 by default to avoid requiring elevated privileges. You can change the listening port using the `port` configuration key or `BADSMTP_PORT` environment variable. If you want to run it on conventional ports (25, 465, 587), you'll need to either run it as a privileged user, or configure a firewall to reroute the traffic from those ports to its high-numbered ones.
 
-Use different ports to simulate various connection issues:
+Use different ports to simulate various connection issues.
 
-- **Ports 3000-3099**: Greeting delay of `(port - 3000) * 10` seconds
-  - Port 3000: No delay
-  - Port 3001: 10-second delay
-  - Port 3099: 990-second delay
-- **Ports 5000-5099**: Drop connection after `(port - 5000) * 10` seconds
-  - Port 5000: Drop immediately after delay
-  - Port 5001: Drop after 10 seconds
-- **Port 6000**: Drop connection immediately without greeting
+- Greeting delay ports: base `25200` with offsets 0..9 -> delays {0s, 1s, 2s, 8s, 10s, 30s, 60s, 120s, 300s, 600s}
+  - Port 25200: No delay (0s)
+  - Port 25201: 1s delay
+  - Port 25202: 2s delay
+  - Port 25203: 8s delay
+  - Port 25204: 10s delay
+  - Port 25205: 30s delay
+  - Port 25206: 60s delay
+  - Port 25207: 120s delay
+  - Port 25208: 300s delay
+  - Port 25209: 600s delay
+
+- Drop-with-delay ports: base `25600` with the same offsets 0..9 -> delays {0s, 1s, 2s, 8s, ...}
+  - Port 25600: Immediate drop (offset 0 -> 0s)
+  - Port 25603: Drop after 8s
+  - Port 25609: Drop after 600s
+
+> [!NOTE]
+> The server will reject configs that attempt to use port numbers outside the supported offsets 0..9.
 
 ### TLS and STARTTLS Support
 
-BadSMTP provides TLS support for encrypted SMTP testing, however, if you want to test TLS error handling more comprehensively, use [badssl.com](httpt://badssl.com):
+BadSMTP provides TLS support for encrypted SMTP connections using SMTPS and SMTP+STARTTLS, however, if you want to test TLS error handling more comprehensively, use [badssl.com](httpt://badssl.com):
 
 #### SMTPS (Implicit TLS)
 

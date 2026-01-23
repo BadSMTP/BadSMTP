@@ -16,16 +16,17 @@ listen_address: "127.0.0.1"
 # Port Behaviour Configuration
 # These port ranges trigger specific behaviours for testing SMTP clients
 
-# Starting port for greeting delay range (default: 3000)
-# Ports 3000-3099 introduce delays of (port-3000)*10 seconds before greeting
-greeting_delay_port_start: 3000
+# Starting port for greeting delay range (default: 25200)
+# Ports 25200..25209 map to discrete delays {0s,1s,2s,8s,10s,30s,60s,120s,300s,600s}
+# Use offsets 0..9 from the base (e.g. 25200 -> 0s, 25201 -> 1s, 25203 -> 8s)
+greeting_delay_port_start: 25200
 
-# Starting port for drop delay range (default: 5000)
-# Ports 5000-5099 drop connection after (port-5000)*10 seconds
-drop_delay_port_start: 5000
+# Starting port for drop delay range (default: 25600)
+# Ports 25600..25609 map to the same discrete delays (offset 0 is immediate drop)
+drop_delay_port_start: 25600
 
-# Port that triggers immediate connection drop (default: 6000)
-immediate_drop_port: 6000
+# Note: Immediate drop is represented by drop_delay_port_start + offset 0 (25600)
+# The previous separate immediate_drop_port config has been removed.
 
 # TLS Configuration
 # Port for implicit TLS (SMTPS) connections (default: 25465)

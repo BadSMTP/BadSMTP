@@ -1,0 +1,1 @@
+debian/ufw/badsmtp.profile usr/share/ufw/applications.d/

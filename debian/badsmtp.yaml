@@ -14,10 +14,9 @@ listen_address: 127.0.0.1
 
 # Port range configurations for testing behaviours
 # These define the port ranges that trigger special behaviours
-greeting_delay_port_start: 3000
-command_delay_port_start: 4000
-drop_delay_port_start: 5000
-immediate_drop_port: 6000
+greeting_delay_port_start: 25200
+drop_delay_port_start: 25600
+# immediate_drop_port and command_delay_port_start removed; use drop_delay_port_start+0 for immediate drop
 
 # TLS configuration
 # Leave empty to use auto-generated self-signed certificates

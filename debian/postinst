@@ -31,6 +31,21 @@ case "$1" in
         if [ -d /run/systemd/system ]; then
             systemctl daemon-reload || true
         fi
+
+        # --- UFW profile registration ---
+        # If UFW exists and is active, update the app profile and optionally apply
+        # a rate-limited rule when BADSMTP_UFW_LIMIT=1 is set in the environment
+        if command -v ufw >/dev/null 2>&1; then
+            if ufw status >/dev/null 2>&1; then
+                # Update/refresh the application profile so "ufw app info badsmtp" works.
+                ufw app update badsmtp >/dev/null 2>&1 || true
+
+                # If the packager/installer requested rate-limiting, apply it
+                if [ "${BADSMTP_UFW_LIMIT:-0}" = "1" ]; then
+                    ufw --force limit badsmtp >/dev/null 2>&1 || true
+                fi
+            fi
+        fi
         ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)
