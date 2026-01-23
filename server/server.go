@@ -133,12 +133,7 @@ func (s *Server) Start() error {
 	go s.startPortListener(s.config.STARTTLSPort, "STARTTLS")
 
 	// Log the started ports and ranges explicitly
-	gPorts := make([]int, 0, PortRangeSize)
-	dPorts := make([]int, 0, PortRangeSize)
-	for i := 0; i < PortRangeSize; i++ {
-		gPorts = append(gPorts, s.config.GreetingDelayPortStart+i)
-		dPorts = append(dPorts, s.config.DropDelayPortStart+i)
-	}
+	// (we intentionally log the base/range rather than the full slice of ports)
 
 	s.logger.Info("BadSMTP server started",
 		logging.F("normal_port", s.config.Port),

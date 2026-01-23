@@ -138,14 +138,14 @@ func TestPortBehaviourEdgeCases(t *testing.T) {
 		port     int
 		expected string
 	}{
-		{DefaultGreetingDelayStart - 1, "Normal behaviour"},      // Just before greeting delay range
-		{DefaultGreetingDelayStart + 0, "Greeting delay: 0s"},    // Start of greeting delay range
-		{DefaultGreetingDelayStart + PortRangeEnd, "Greeting delay: 600s"},  // End of greeting delay range
-		{DefaultGreetingDelayStart + PortRangeEnd + 1, "Normal behaviour"},      // Just after greeting delay range
-		{DefaultDropDelayStart - 1, "Normal behaviour"},      // Just before drop delay range
-		{DefaultDropDelayStart + 0, "Immediate drop"},   // Start of drop delay range
-		{DefaultDropDelayStart + PortRangeEnd, "Drop with delay: 600s"}, // End of drop delay range
-		{DefaultDropDelayStart + PortRangeEnd + 1, "Normal behaviour"},      // Just after drop delay range
+		{DefaultGreetingDelayStart - 1, "Normal behaviour"},                // Just before greeting delay range
+		{DefaultGreetingDelayStart + 0, "Greeting delay: 0s"},              // Start of greeting delay range
+		{DefaultGreetingDelayStart + PortRangeEnd, "Greeting delay: 600s"}, // End of greeting delay range
+		{DefaultGreetingDelayStart + PortRangeEnd + 1, "Normal behaviour"}, // Just after greeting delay range
+		{DefaultDropDelayStart - 1, "Normal behaviour"},                    // Just before drop delay range
+		{DefaultDropDelayStart + 0, "Immediate drop"},                      // Start of drop delay range
+		{DefaultDropDelayStart + PortRangeEnd, "Drop with delay: 600s"},    // End of drop delay range
+		{DefaultDropDelayStart + PortRangeEnd + 1, "Normal behaviour"},     // Just after drop delay range
 	}
 
 	for _, test := range edgeCases {
