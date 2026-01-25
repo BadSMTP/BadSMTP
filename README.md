@@ -26,7 +26,7 @@ For the most part, all error behaviours can be triggered entirely from the clien
 
 ### Option 1: Download Pre-built Binary (Recommended)
 
-Download the latest release for your platform from [the Releases page](https://github.com/BadSMTP/BadSMTP/issues/releases).
+Download the latest release for your platform from the Releases page or use the stable "latest" URLs below.
 
 **Linux (Intel/AMD):**
 
@@ -406,13 +406,13 @@ docker run -p 2525:2525 badsmtp:latest
 
 ### CI/CD Pipeline Integration
 
-BadSMTP is designed to be easily integrated into CI pipelines:
+BadSMTP is designed to be easily integrated into CI pipelines. Use the stable "latest" asset URLs so CI pipelines always fetch the most recent release matching the supported platforms.
 
 ```yaml
 # Example GitHub Actions step
 - name: Start BadSMTP Server
   run: |
-    wget https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-linux-amd64
+    curl -L https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-linux-amd64.tar.gz | tar xz
     chmod +x badsmtp-linux-amd64
     ./badsmtp-linux-amd64 -port=2525 &
     sleep 2

@@ -142,6 +142,53 @@ jobs:
           echo "Release assets:"
           ls -lh release-assets/
 
+          # Create consolidated checksums file for all artifacts (exclude existing .sha256, .asc and the checksums file itself)
+          echo "Creating consolidated checksum file: release-assets/badsmtp-checksums.txt"
+          rm -f release-assets/badsmtp-checksums.txt
+          for f in release-assets/*; do
+            case "${f}" in
+              *.sha256|*.asc|*badsmtp-checksums.txt) continue ;;
+            esac
+            if command -v sha256sum > /dev/null; then
+              sha256sum "${f}" >> release-assets/badsmtp-checksums.txt
+            else
+              shasum -a 256 "${f}" >> release-assets/badsmtp-checksums.txt
+            fi
+          done
+
+          # Import GPG key and create detached ASCII-armored signatures for each asset if GPG key is supplied
+          if [ -n "${GPG_PRIVATE_KEY}" ]; then
+            echo "GPG key provided - importing and signing artifacts"
+
+            # Ensure gpg is available
+            if ! command -v gpg >/dev/null 2>&1; then
+              echo "Installing gnupg"
+              sudo apt-get update && sudo apt-get install -y gnupg
+            fi
+
+            # Import the provided ASCII-armored private key
+            printf '%s' "${GPG_PRIVATE_KEY}" > /tmp/badsmtp_gpg_key.asc
+            gpg --batch --import /tmp/badsmtp_gpg_key.asc
+
+            # Sign each file (skip existing .asc signatures)
+            for f in release-assets/*; do
+              case "${f}" in
+                *.asc) continue ;;
+              esac
+              if [ -n "${GPG_PASSPHRASE}" ]; then
+                gpg --batch --yes --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" --armor --detach-sign -o "${f}.asc" "${f}" || true
+              else
+                gpg --batch --yes --armor --detach-sign -o "${f}.asc" "${f}" || true
+              fi
+            done
+          else
+            echo "GPG_PRIVATE_KEY not provided; skipping signing of artifacts"
+          fi
+
+          # List files after checksum/signing
+          echo "Final release assets:"
+          ls -lh release-assets/
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -151,52 +198,64 @@ jobs:
           body: |
             ## Installation
 
-            Download the appropriate binary for your platform:
+            Download the appropriate binary for your platform (stable latest download URLs):
 
             ### Linux (Intel/AMD)
             ```bash
-            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/badsmtp-linux-amd64.tar.gz | tar xz
+            curl -L https://github.com/${{ github.repository }}/releases/latest/download/badsmtp-linux-amd64.tar.gz | tar xz
             chmod +x badsmtp-linux-amd64
             sudo mv badsmtp-linux-amd64 /usr/local/bin/badsmtp
             ```
 
             ### Linux (ARM64)
             ```bash
-            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/badsmtp-linux-arm64.tar.gz | tar xz
+            curl -L https://github.com/${{ github.repository }}/releases/latest/download/badsmtp-linux-arm64.tar.gz | tar xz
             chmod +x badsmtp-linux-arm64
             sudo mv badsmtp-linux-arm64 /usr/local/bin/badsmtp
             ```
 
             ### Linux (RISC-V 64-bit)
             ```bash
-            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/badsmtp-linux-riscv64.tar.gz | tar xz
+            curl -L https://github.com/${{ github.repository }}/releases/latest/download/badsmtp-linux-riscv64.tar.gz | tar xz
             chmod +x badsmtp-linux-riscv64
             sudo mv badsmtp-linux-riscv64 /usr/local/bin/badsmtp
             ```
 
             ### macOS (Intel)
             ```bash
-            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/badsmtp-darwin-amd64.tar.gz | tar xz
+            curl -L https://github.com/${{ github.repository }}/releases/latest/download/badsmtp-darwin-amd64.tar.gz | tar xz
             chmod +x badsmtp-darwin-amd64
             sudo mv badsmtp-darwin-amd64 /usr/local/bin/badsmtp
             ```
 
             ### macOS (Apple Silicon)
             ```bash
-            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/badsmtp-darwin-arm64.tar.gz | tar xz
+            curl -L https://github.com/${{ github.repository }}/releases/latest/download/badsmtp-darwin-arm64.tar.gz | tar xz
             chmod +x badsmtp-darwin-arm64
             sudo mv badsmtp-darwin-arm64 /usr/local/bin/badsmtp
             ```
 
             ### Windows (Intel/AMD)
-            Download `badsmtp-windows-amd64.zip`, extract it, and add the directory to your PATH.
+            Download `badsmtp-windows-amd64.zip` from the Releases "Latest" assets and extract it, then add the directory to your PATH.
 
             ## Verify Downloads
 
-            All binaries include SHA256 checksums. Verify your download:
+            All binaries include SHA256 checksums and optional GPG signatures. Verify your download:
 
             ```bash
-            sha256sum -c badsmtp-<platform>.tar.gz.sha256
+            # Download consolidated checksums
+            curl -LO https://github.com/${{ github.repository }}/releases/latest/download/badsmtp-checksums.txt
+
+            # Verify the downloaded artifact (example: linux amd64)
+            curl -LO https://github.com/${{ github.repository }}/releases/latest/download/badsmtp-linux-amd64.tar.gz
+            curl -LO https://github.com/${{ github.repository }}/releases/latest/download/badsmtp-linux-amd64.tar.gz.asc || true
+
+            # Verify checksum
+            sha256sum -c badsmtp-checksums.txt
+
+            # If a .asc signature exists, verify signature (requires import of public key)
+            # gpg --import publickey.asc
+            # gpg --verify badsmtp-linux-amd64.tar.gz.asc badsmtp-linux-amd64.tar.gz
             ```
 
             ## What's Changed
@@ -208,3 +267,5 @@ jobs:
           files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
