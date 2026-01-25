@@ -88,6 +88,9 @@ func RegisterFlags() {
 	pf.Bool("enable-hostname-routing", false, "Enable hostname-based routing")
 	pf.String("default-mailbox-dir", "", "Default mailbox directory for unmapped hostnames")
 
+	// Listen address (bind IP)
+	pf.String("listen-address", "127.0.0.1", "IP address to bind listeners to (maps to listen_address)")
+
 	// Port range configurations
 	pf.Int("greeting-delay-port-start", server.DefaultGreetingDelayStart, "Starting port for greeting delays")
 	pf.Int("drop-delay-port-start", server.DefaultDropDelayStart, "Starting port for drop delays")
