@@ -28,12 +28,24 @@ For the most part, all error behaviours can be triggered entirely from the clien
 
 Download the latest release for your platform from the Releases page or use the stable "latest" URLs below.
 
-**Linux (Intel/AMD):**
+**Linux (Intel, ARM, RISC V):**
 
 ```bash
 curl -L https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-linux-amd64.tar.gz | tar xz
 chmod +x badsmtp-linux-amd64
 sudo mv badsmtp-linux-amd64 /usr/local/bin/badsmtp
+```
+
+```bash
+curl -L https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-linux-arm64.tar.gz | tar xz
+chmod +x badsmtp-linux-arm64
+sudo mv badsmtp-linux-arm64 /usr/local/bin/badsmtp
+```
+
+```bash
+curl -L https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-linux-riscv64.tar.gz | tar xz
+chmod +x badsmtp-linux-riscv64
+sudo mv badsmtp-linux-riscv64 /usr/local/bin/badsmtp
 ```
 
 **macOS (Apple Silicon or Intel):**
@@ -44,10 +56,19 @@ chmod +x badsmtp-darwin-arm64
 sudo mv badsmtp-darwin-arm64 /usr/local/bin/badsmtp
 ```
 
+```bash
+curl -L https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-darwin-amd64.tar.gz | tar xz
+chmod +x badsmtp-darwin-amd64
+sudo mv badsmtp-darwin-amd64 /usr/local/bin/badsmtp
+```
+
 **Windows:**
 Download the appropriate `badsmtp-windows-amd64.zip` from releases and add it to your `PATH`.
 
 ### Option 2: Build from Source
+
+> [!NOTE]
+> Remember that BadSMTP requires Go 1.25 or later.
 
 1. **Build the server:**
 
@@ -76,8 +97,6 @@ BadSMTP uses [Koanf](https://pkg.go.dev/github.com/knadh/koanf) for merging conf
 2. Environment variables (prefixed with `BADSMTP_`)
 3. Configuration file (`badsmtp.yaml` / `badsmtp.yml` / `badsmtp.json`)
 4. Built-in defaults (applied by the server)
-
-Koanf loads keys using snake_case by default when you map them into a Go struct with `mapstructure` tags. This repository uses snake_case keys in YAML and environment variables to match the `server.Config` mapping.
 
 ### YAML / File configuration (example)
 
@@ -142,6 +161,7 @@ Use different ports to simulate various connection issues.
 - Drop-with-delay ports: base `25600` with the same offsets 0..9 -> delays {0s, 1s, 2s, 8s, ...}
   - Port 25600: Immediate drop (offset 0 -> 0s)
   - Port 25603: Drop after 8s
+  - [...]
   - Port 25609: Drop after 600s
 
 > [!NOTE]
