@@ -50,6 +50,8 @@ type Server struct {
 
 	// shutdown flag
 	shuttingDown int32
+	// done is closed when shutdown completes; Start waits on it so process can exit
+	done chan struct{}
 }
 
 // NewServer creates a new SMTP server with the specified configuration.
@@ -97,6 +99,7 @@ func NewServer(config *Config) (*Server, error) {
 		mailbox:  mailbox,
 		logger:   logger,
 		sessions: make(map[*Session]struct{}),
+		done:     make(chan struct{}),
 	}, nil
 }
 
@@ -145,9 +148,7 @@ func (s *Server) Start() error {
 		logging.F("log_output", s.config.LogConfig.Output))
 
 	// Keep main goroutine alive until shutdown completes.
-	// Block until sessionsWG is done and no listeners are active.
-	// We'll wait on a channel that Shutdown will close when finished.
-	<-make(chan struct{})
+	<-s.done
 	return nil
 }
 
