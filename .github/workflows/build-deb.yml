@@ -23,6 +23,36 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set Debian changelog version (if provided)
+        shell: bash
+        env:
+          VERSION_INPUT: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          VERSION="${VERSION_INPUT:-}"
+          if [ -z "$VERSION" ]; then
+            echo "No version provided; skipping changelog update"
+            exit 0
+          fi
+          VERSION=${VERSION#v}
+          echo "Setting debian/changelog to version: $VERSION"
+          if [ -f debian/changelog ]; then
+            cp debian/changelog debian/changelog.orig || true
+          fi
+          cat > debian/changelog.new <<EOF
+          badsmtp (${VERSION}-1) unstable; urgency=medium
+          
+            * Release ${VERSION}
+          
+           -- BadSMTP Maintainers <badsmtp@badsmtp.com>  $(date -R)
+          
+          EOF
+          if [ -f debian/changelog.orig ]; then
+            cat debian/changelog.orig >> debian/changelog.new
+          fi
+          mv debian/changelog.new debian/changelog
+          echo "Updated debian/changelog"
+
       - name: Build Debian package for ${{ matrix.arch }}
         uses: jtdor/build-deb-action@v1
         env:
