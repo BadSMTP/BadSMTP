@@ -42,8 +42,7 @@ override_dh_auto_install:
 	install -D -m 0644 debian/badsmtp.yaml $(CURDIR)/debian/badsmtp/etc/badsmtp/badsmtp.yaml
 	# Install environment defaults file
 	install -D -m 0644 debian/badsmtp.default $(CURDIR)/debian/badsmtp/etc/default/badsmtp
-	# Install systemd service file
-	install -D -m 0644 debian/badsmtp.service $(CURDIR)/debian/badsmtp/lib/systemd/system/badsmtp.service
+	# Systemd unit is handled by debhelper (dh_installsystemd) using debian/badsmtp.service
 
 override_dh_auto_test:
 	# Skip tests during package build

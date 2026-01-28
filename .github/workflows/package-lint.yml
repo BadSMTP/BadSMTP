@@ -1,0 +1,120 @@
+name: Package Lint
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to use for the package (e.g., v0.1.5). Optional.'
+        required: false
+        default: ''
+
+jobs:
+  build-and-lint-debs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        arch: [amd64, arm64, riscv64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set Debian changelog version (if provided)
+        shell: bash
+        env:
+          VERSION_INPUT: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION=""
+          if [ -n "${VERSION_INPUT:-}" ] && [ "${VERSION_INPUT}" != "" ]; then
+            VERSION="${VERSION_INPUT}"
+          elif [ -n "${REF_NAME:-}" ] && [ "${REF_NAME}" != "" ]; then
+            VERSION="${REF_NAME}"
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "No version provided; leaving debian/changelog unchanged"
+            exit 0
+          fi
+
+          VERSION=${VERSION#v}
+          echo "Preparing debian/changelog for version: $VERSION"
+
+          if [ -f debian/changelog ]; then
+            cp debian/changelog debian/changelog.orig || true
+          fi
+
+          cat > debian/changelog.new <<EOF
+          badsmtp (${VERSION}-1) unstable; urgency=medium
+
+            * Release ${VERSION}
+
+           -- BadSMTP Maintainers <badsmtp@badsmtp.com>  $(date -R)
+
+          EOF
+          if [ -f debian/changelog.orig ]; then
+            cat debian/changelog.orig >> debian/changelog.new
+          fi
+          mv debian/changelog.new debian/changelog
+          echo "Updated debian/changelog"
+
+      - name: Build Debian package for ${{ matrix.arch }}
+        uses: jtdor/build-deb-action@v1
+        env:
+          DEB_BUILD_OPTIONS: noautodbgsym
+        with:
+          host-arch: ${{ matrix.arch }}
+          buildpackage-opts: --build=binary --no-sign
+          docker-image: debian:stable-slim
+          before-build-hook: |
+            apt-get update && apt-get install -y wget
+            wget -q https://go.dev/dl/go1.25.0.linux-amd64.tar.gz
+            rm -rf /usr/local/go
+            tar -C /usr/local -xzf go1.25.0.linux-amd64.tar.gz
+            export PATH=/usr/local/go/bin:$PATH
+            go version
+
+      - name: List built packages
+        run: |
+          echo "Built packages (debian/artifacts):"
+          ls -lh debian/artifacts || true
+
+      - name: Install lintian and tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lintian dpkg-dev
+
+      - name: Run lintian on built .deb files
+        run: |
+          set -euo pipefail
+          echo "Running lintian on any debs in debian/artifacts"
+          for d in debian/artifacts/*.deb; do
+            [ -e "$d" ] || continue
+            echo "\n--- lintian: $d ---\n"
+            lintian --display-info --show-overrides "$d" || true
+          done
+
+      - name: Inspect maintainer scripts and systemd fragments
+        run: |
+          for d in debian/artifacts/*.deb; do
+            [ -e "$d" ] || continue
+            echo "\n--- package contents for $d ---"
+            dpkg-deb -c "$d" | sed -n '1,200p'
+            echo "\n--- control files for $d ---"
+            tmpdir=$(mktemp -d)
+            dpkg-deb -e "$d" "$tmpdir"
+            ls -l "$tmpdir" || true
+            for f in preinst postinst prerm postrm; do
+              if [ -f "$tmpdir/$f" ]; then
+                echo "\n--- $f (from $d) ---"
+                sed -n '1,200p' "$tmpdir/$f"
+              fi
+            done
+            rm -rf "$tmpdir"
+          done
