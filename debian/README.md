@@ -36,8 +36,12 @@ ls -lh badsmtp_*.deb
 ### Testing the Package
 
 ```bash
-# Install locally built package
-sudo dpkg -i badsmtp_1.0.0-1_amd64.deb
+# Install locally built package (from local build output)
+sudo dpkg -i ./badsmtp_*.deb
+
+# Or install the latest released package using the stable URL (amd64 example)
+curl -L -o badsmtp-amd64.deb https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-amd64.deb
+sudo dpkg -i badsmtp-amd64.deb
 
 # Check for missing dependencies
 sudo apt-get install -f
@@ -63,6 +67,21 @@ The workflow will:
 1. Build .deb packages for all supported architectures
 2. Create a GitHub Release
 3. Attach the .deb files to the release
+
+Note: the Release workflow also creates stable, version-less copies of the `.deb` filenames so CI and install scripts can use consistent URLs. The following stable names are produced and uploaded alongside the versioned files:
+- `badsmtp-amd64.deb` (amd64)
+- `badsmtp-arm64.deb` (arm64)
+- `badsmtp-riscv64.deb` (riscv64)
+
+These stable filenames are available via the `latest/download` URLs, for example:
+```bash
+# amd64
+curl -L -o badsmtp-amd64.deb https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-amd64.deb
+# arm64
+curl -L -o badsmtp-arm64.deb https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-arm64.deb
+# riscv64
+curl -L -o badsmtp-riscv64.deb https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-riscv64.deb
+```
 
 ## Package Contents
 
@@ -156,11 +175,9 @@ sudo journalctl -u badsmtp -n 50
 ## Upgrading
 
 ```bash
-# Download new version
-wget https://github.com/BadSMTP/BadSMTP/releases/download/v1.1.0/badsmtp_1.1.0-1_amd64.deb
-
-# Install (will upgrade existing installation)
-sudo dpkg -i badsmtp_1.1.0-1_amd64.deb
+# Download and install the latest released amd64 package (uses stable filename)
+curl -L -o badsmtp-amd64.deb https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-amd64.deb
+sudo dpkg -i badsmtp-amd64.deb
 
 # Service will automatically restart
 ```

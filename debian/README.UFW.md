@@ -29,7 +29,7 @@ Notes about `limit` and rate-limiting
 - To enable rate-limiting at package install time set the environment variable `BADSMTP_UFW_LIMIT=1`.
   For example:
 
-    BADSMTP_UFW_LIMIT=1 dpkg -i badsmtp_1.2.3_all.deb
+    BADSMTP_UFW_LIMIT=1 dpkg -i badsmtp-amd64.deb
 
 - Alternatively, administrators can run:
 
@@ -46,4 +46,3 @@ Support
 - If you want a different default behavior for firewalling (e.g., open only 2525/TLS and not the
   delay ports), modify `debian/ufw/badsmtp.profile` and `debian/postinst` accordingly before
   building the package.
-

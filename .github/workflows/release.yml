@@ -8,8 +8,14 @@ on:
     inputs:
       version:
         description: 'Version tag (e.g., v1.0.0)'
-        required: true
+        required: false
+        default: ''
         type: string
+      draft:
+        description: 'Create the release as a draft? (true/false)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build-and-release:
@@ -115,9 +121,58 @@ jobs:
             badsmtp-${{ matrix.platform }}*
           retention-days: 7
 
+  build-debs:
+    name: Build Debian packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        arch: [amd64, arm64, riscv64]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Build Debian package for ${{ matrix.arch }}
+        uses: jtdor/build-deb-action@v1
+        env:
+          DEB_BUILD_OPTIONS: noautodbgsym
+        with:
+          host-arch: ${{ matrix.arch }}
+          buildpackage-opts: --build=binary --no-sign
+          docker-image: debian:stable-slim
+          before-build-hook: |
+            apt-get update && apt-get install -y wget
+            wget -q https://go.dev/dl/go1.25.0.linux-amd64.tar.gz
+            rm -rf /usr/local/go
+            tar -C /usr/local -xzf go1.25.0.linux-amd64.tar.gz
+            export PATH=/usr/local/go/bin:$PATH
+            go version
+
+      - name: List built packages
+        run: |
+          echo "Built packages:"
+          ls -lh debian/artifacts/
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: badsmtp-${{ matrix.arch }}-deb
+          path: debian/artifacts/*.deb
+          if-no-files-found: error
+
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v6
+        with:
+          name: badsmtp-${{ matrix.arch }}-metadata
+          path: |
+            debian/artifacts/*.changes
+            debian/artifacts/*.buildinfo
+
   create-release:
     name: Create GitHub Release
-    needs: build-and-release
+    needs: [build-and-release, build-debs]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -156,6 +211,28 @@ jobs:
             fi
           done
 
+          # Create stable Debian filenames for latest/download links (copy versioned .deb -> stable names)
+          for deb in release-assets/*.deb; do
+            [ -e "$deb" ] || continue
+            base=$(basename "$deb")
+            case "$base" in
+              *_amd64.deb) cp -v "$deb" release-assets/badsmtp-amd64.deb ;;
+              *_arm64.deb) cp -v "$deb" release-assets/badsmtp-arm64.deb ;;
+              *_riscv64.deb) cp -v "$deb" release-assets/badsmtp-riscv64.deb ;;
+            esac
+          done
+
+          # If signatures exist for .deb files, create matching stable-named signature files
+          for asc in release-assets/*.deb.asc; do
+            [ -e "$asc" ] || continue
+            base=$(basename "$asc")
+            case "$base" in
+              *_amd64.deb.asc) cp -v "$asc" release-assets/badsmtp-amd64.deb.asc ;;
+              *_arm64.deb.asc) cp -v "$asc" release-assets/badsmtp-arm64.deb.asc ;;
+              *_riscv64.deb.asc) cp -v "$asc" release-assets/badsmtp-riscv64.deb.asc ;;
+            esac
+          done
+
           # Import GPG key and create detached ASCII-armored signatures for each asset if GPG key is supplied
           if [ -n "${GPG_PRIVATE_KEY}" ]; then
             echo "GPG key provided - importing and signing artifacts"
@@ -191,10 +268,10 @@ jobs:
 
       - name: Create Release
         id: create_release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.5.0
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: ${{ github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}
+          name: ${{ github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}
           body: |
             ## Installation
 
@@ -261,11 +338,12 @@ jobs:
             ## What's Changed
 
             See the auto-generated release notes below.
-          draft: false
+          draft: ${{ github.event.inputs.draft == 'true' }}
           prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
-          # upload all prepared assets in release-assets/
+          generate_release_notes: true
           files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+

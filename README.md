@@ -65,6 +65,29 @@ sudo mv badsmtp-darwin-amd64 /usr/local/bin/badsmtp
 **Windows:**
 Download the appropriate `badsmtp-windows-amd64.zip` from releases and add it to your `PATH`.
 
+### Debian packages (.deb)
+
+If you prefer Debian packages, the releases include stable, version-less `.deb` filenames so you can use the `latest/download` URLs. Replace `amd64` with `arm64` or `riscv64` for other architectures.
+
+```bash
+# amd64
+curl -L -o badsmtp-amd64.deb https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-amd64.deb
+sudo dpkg -i badsmtp-amd64.deb
+
+# arm64
+curl -L -o badsmtp-arm64.deb https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-arm64.deb
+sudo dpkg -i badsmtp-arm64.deb
+
+# riscv64
+curl -L -o badsmtp-riscv64.deb https://github.com/BadSMTP/BadSMTP/releases/latest/download/badsmtp-riscv64.deb
+sudo dpkg -i badsmtp-riscv64.deb
+```
+
+> See the Debian packaging documentation for build, upgrade, and UFW integration notes:
+>
+> - [Debian packaging README](debian/README.md)
+> - [UFW packaging notes](debian/README.UFW.md)
+
 ### Option 2: Build from Source
 
 > [!NOTE]
@@ -108,9 +131,8 @@ mailbox_dir: ./mailbox
 tls_port: 25465
 starttls_port: 25587
 
-greeting_delay_port_start: 3000
-drop_delay_port_start: 5000
-immediate_drop_port: 6000
+greeting_delay_port_start: 25200
+drop_delay_port_start: 25600
 ```
 
 ### Environment variables
@@ -442,6 +464,22 @@ BadSMTP is designed to be easily integrated into CI pipelines. Use the stable "l
     # Your SMTP client tests here
     python -m pytest tests/test_smtp.py
 ```
+
+### Manually triggering a release (workflow_dispatch)
+
+You can run the `Release` workflow manually from the GitHub Actions UI or via the `gh` CLI. The workflow accepts two optional inputs:
+
+- `version` (string): the tag to create/use. If omitted when running manually, the workflow will use the current ref name if available.
+- `draft` (boolean): set to `true` to create the release in draft form so you can verify assets before publishing.
+
+Example using the GitHub CLI (replace `main` with the branch you want to run from):
+
+```bash
+# Create a draft release for tag v1.2.3 (workflow will create the release and upload assets)
+gh workflow run Release --ref main -f version=v1.2.3 -f draft=true
+```
+
+Or trigger from the Actions tab in the repository and fill the `version` and `draft` fields in the UI.
 
 ## Example Test Scenarios
 
