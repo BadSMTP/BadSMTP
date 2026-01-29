@@ -121,6 +121,13 @@ BadSMTP uses [Koanf](https://pkg.go.dev/github.com/knadh/koanf) for merging conf
 3. Configuration file (`badsmtp.yaml` / `badsmtp.yml` / `badsmtp.json`)
 4. Built-in defaults (applied by the server)
 
+Configuration files are searched in the following locations (in order of precedence):
+- Current directory (`.`)
+- User config directory (`$HOME/.badsmtp/`)
+- System config directory (`/etc/badsmtp/`)
+
+The first config file found is used. You can also specify a custom config file path using the `--config` flag.
+
 ### YAML / File configuration (example)
 
 ```yaml

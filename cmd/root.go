@@ -24,36 +24,45 @@ var rootCmd = &cobra.Command{
 		// Create koanf instance
 		k := koanf.New(".")
 
-		// Bind flags provider (posflag) using the root command's persistent flags
-		if err := k.Load(kposflag.Provider(cmd.PersistentFlags(), ":", k), nil); err != nil {
-			return fmt.Errorf("failed to load flags: %w", err)
-		}
-
-		// Load config file if provided via flag
-		cfgPath, err := cmd.PersistentFlags().GetString("config")
-		if err != nil {
-			return fmt.Errorf("failed to read config flag: %w", err)
-		}
+		// Load config file first (lowest priority, except for built-in defaults)
+		// Check for --config flag to see if user specified a custom config path
+		cfgPath := cmd.Flag("config").Value.String()
 		if cfgPath != "" {
 			if err := k.Load(kfile.Provider(cfgPath), kyaml.Parser()); err != nil {
 				return fmt.Errorf("failed to load config file %s: %w", cfgPath, err)
 			}
 		} else {
-			// attempt default filenames (badsmtp.yaml, badsmtp.yml)
-			for _, fn := range []string{"badsmtp.yaml", "badsmtp.yml", "badsmtp.json"} {
-				if _, err := os.Stat(fn); err == nil {
-					if err := k.Load(kfile.Provider(fn), kyaml.Parser()); err != nil {
-						return fmt.Errorf("failed to load config file %s: %w", fn, err)
+			// Search for config files in standard locations (in order of precedence)
+			searchPaths := getConfigSearchPaths()
+			extensions := []string{"yaml", "yml", "json"}
+
+			configFound := false
+			for _, dir := range searchPaths {
+				for _, ext := range extensions {
+					configPath := fmt.Sprintf("%s/badsmtp.%s", dir, ext)
+					if _, err := os.Stat(configPath); err == nil {
+						if err := k.Load(kfile.Provider(configPath), kyaml.Parser()); err != nil {
+							return fmt.Errorf("failed to load config file %s: %w", configPath, err)
+						}
+						configFound = true
+						break
 					}
+				}
+				if configFound {
 					break
 				}
 			}
 		}
 
-		// Load environment variables (prefix BADSMTP) into koanf
+		// Load environment variables (prefix BADSMTP) - medium priority, overrides config file
 		// use a replacer function to map ENV names to koanf keys
 		if err := k.Load(kenv.Provider("BADSMTP_", "_", createEnvReplacer().Replace), nil); err != nil {
 			return fmt.Errorf("failed to load env: %w", err)
+		}
+
+		// Load command-line flags last (highest priority) - overrides everything
+		if err := k.Load(kposflag.Provider(cmd.PersistentFlags(), ":", k), nil); err != nil {
+			return fmt.Errorf("failed to load flags: %w", err)
 		}
 
 		// Unmarshal into typed config
@@ -76,6 +85,22 @@ var rootCmd = &cobra.Command{
 
 func createEnvReplacer() *strings.Replacer {
 	return strings.NewReplacer("-", "_", ".", "_")
+}
+
+// getConfigSearchPaths returns the directories to search for config files, in order of precedence.
+// The order is: current directory, $HOME/.badsmtp/, /etc/badsmtp/
+func getConfigSearchPaths() []string {
+	paths := []string{"."}
+
+	// Add $HOME/.badsmtp/ if HOME is set
+	if home := os.Getenv("HOME"); home != "" {
+		paths = append(paths, home+"/.badsmtp")
+	}
+
+	// Add system-wide config directory
+	paths = append(paths, "/etc/badsmtp")
+
+	return paths
 }
 
 // RegisterFlags registers persistent flags for the root command. This replaces an init() function
