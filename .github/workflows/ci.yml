@@ -21,14 +21,9 @@ jobs:
       with:
         go-version: '1.25'
 
-    - name: Cache Go modules
-      uses: actions/cache@v5 # pinned alt: uses: actions/cache@<sha-for-v5>
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-    
+    # actions/setup-go@v6 caches the module and build caches by default (keyed on
+    # go.sum), so no separate actions/cache step is needed.
+
     - name: Download dependencies
       run: go mod download
     
@@ -39,7 +34,7 @@ jobs:
       run: FAST_TESTS=true ./run_tests.sh
     
     - name: Upload coverage reports
-      uses: codecov/codecov-action@v3 # pinned alt: uses: codecov/codecov-action@<sha-for-v3>
+      uses: codecov/codecov-action@v5 # pinned alt: uses: codecov/codecov-action@<sha-for-v5>
       with:
         file: ./combined_coverage.out
         flags: unittests
