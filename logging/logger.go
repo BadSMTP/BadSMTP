@@ -75,11 +75,11 @@ func ParseLogLevel(level string) LogLevel {
 // Field represents a key-value pair for structured logging
 type Field struct {
 	Key   string
-	Value interface{}
+	Value any
 }
 
 // F is a convenience function for creating fields
-func F(key string, value interface{}) Field {
+func F(key string, value any) Field {
 	return Field{Key: key, Value: value}
 }
 
@@ -142,11 +142,11 @@ func LoadConfigFromEnv() LogConfig {
 
 // LogEntry represents a structured log entry
 type LogEntry struct {
-	Timestamp time.Time              `json:"timestamp"`
-	Level     string                 `json:"level"`
-	Message   string                 `json:"message"`
-	Error     string                 `json:"error,omitempty"`
-	Fields    map[string]interface{} `json:"fields,omitempty"`
+	Timestamp time.Time      `json:"timestamp"`
+	Level     string         `json:"level"`
+	Message   string         `json:"message"`
+	Error     string         `json:"error,omitempty"`
+	Fields    map[string]any `json:"fields,omitempty"`
 }
 
 // NOTE: Redaction responsibility
@@ -176,7 +176,7 @@ func NewLogger(config *LogConfig) (Logger, error) {
 // baseLogger provides common functionality
 type baseLogger struct {
 	config LogConfig
-	fields map[string]interface{}
+	fields map[string]any
 }
 
 // formatEntry formats a log entry according to configuration
@@ -199,7 +199,7 @@ func (l *baseLogger) formatEntry(level LogLevel, msg string, err error, fields [
 	// Use maps.Clone to copy logger-level fields if any
 	entry.Fields = maps.Clone(l.fields)
 	if entry.Fields == nil {
-		entry.Fields = make(map[string]interface{})
+		entry.Fields = make(map[string]any)
 	}
 
 	// Add call-specific fields
@@ -246,7 +246,7 @@ type stdoutLogger struct {
 // NewStdoutLogger creates a stdout logger
 func NewStdoutLogger(config *LogConfig) Logger {
 	return &stdoutLogger{
-		baseLogger: baseLogger{config: *config, fields: make(map[string]interface{})},
+		baseLogger: baseLogger{config: *config, fields: make(map[string]any)},
 		writer:     os.Stdout,
 	}
 }
@@ -287,7 +287,7 @@ func (l *stdoutLogger) Error(msg string, err error, fields ...Field) {
 func (l *stdoutLogger) With(fields ...Field) Logger {
 	newFields := maps.Clone(l.fields)
 	if newFields == nil {
-		newFields = make(map[string]interface{})
+		newFields = make(map[string]any)
 	}
 	for _, field := range fields {
 		newFields[field.Key] = field.Value
@@ -316,7 +316,7 @@ func NewRemoteLogger(protocol string, config *LogConfig) (Logger, error) {
 	}
 
 	return &remoteLogger{
-		baseLogger: baseLogger{config: *config, fields: make(map[string]interface{})},
+		baseLogger: baseLogger{config: *config, fields: make(map[string]any)},
 		protocol:   protocol,
 		addr:       config.RemoteAddr,
 	}, nil
@@ -370,7 +370,7 @@ func (l *remoteLogger) Error(msg string, err error, fields ...Field) {
 func (l *remoteLogger) With(fields ...Field) Logger {
 	newFields := maps.Clone(l.fields)
 	if newFields == nil {
-		newFields = make(map[string]interface{})
+		newFields = make(map[string]any)
 	}
 	for _, field := range fields {
 		newFields[field.Key] = field.Value
@@ -389,7 +389,7 @@ func (l *remoteLogger) SetLevel(level LogLevel) {
 // RedactFields returns a copy of the provided fields slice with values replaced
 // according to the replacements map. Callers can provide exact replacements for
 // keys that need to be redacted (for example: {"args": []string{"[redacted]"}}).
-func RedactFields(fields []Field, replacements map[string]interface{}) []Field {
+func RedactFields(fields []Field, replacements map[string]any) []Field {
 	if len(fields) == 0 || len(replacements) == 0 {
 		// nothing to do
 		out := make([]Field, len(fields))

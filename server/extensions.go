@@ -10,10 +10,10 @@ import (
 
 // User represents an authenticated user in the system.
 type User struct {
-	ID       string                 // Unique identifier
-	Username string                 // Username or email
-	Active   bool                   // Whether the user is active
-	Metadata map[string]interface{} // Extension data (quota, plan, etc.)
+	ID       string         // Unique identifier
+	Username string         // Username or email
+	Active   bool           // Whether the user is active
+	Metadata map[string]any // Extension data (quota, plan, etc.)
 }
 
 // Message represents an SMTP message with all relevant context.
@@ -67,14 +67,14 @@ type SessionObserver interface {
 
 // SessionContext provides context about the current SMTP session.
 type SessionContext struct {
-	ID            string                 // Unique session ID
-	ClientIP      string                 // Client IP address
-	Hostname      string                 // Server hostname
-	User          *User                  // Authenticated user (nil if not authenticated)
-	Authenticated bool                   // Whether authentication has occurred
-	TLSActive     bool                   // Whether TLS is active
-	MessagesSent  int                    // Number of messages sent in this session
-	Metadata      map[string]interface{} // Custom metadata from extensions (e.g., parsed tokens)
+	ID            string         // Unique session ID
+	ClientIP      string         // Client IP address
+	Hostname      string         // Server hostname
+	User          *User          // Authenticated user (nil if not authenticated)
+	Authenticated bool           // Whether authentication has occurred
+	TLSActive     bool           // Whether TLS is active
+	MessagesSent  int            // Number of messages sent in this session
+	Metadata      map[string]any // Custom metadata from extensions (e.g., parsed tokens)
 }
 
 // RateLimiter controls connection and message rates.
@@ -130,7 +130,7 @@ type CapabilityParser interface {
 	//   - Metadata map with extracted custom data (e.g., tokens, flags)
 	//
 	// The default implementation simply returns the parts unchanged with empty metadata.
-	ParseCapabilities(hostname string, parts []string) ([]string, map[string]interface{})
+	ParseCapabilities(hostname string, parts []string) ([]string, map[string]any)
 }
 
 // SMTPExtension allows defining custom SMTP commands and capabilities.
@@ -162,7 +162,7 @@ type SessionWriter interface {
 	// WriteResponse sends a response to the client
 	WriteResponse(response string) error
 	// GetMetadata returns session metadata set by other extensions
-	GetMetadata() map[string]interface{}
+	GetMetadata() map[string]any
 	// SetMetadata stores custom data in session metadata
-	SetMetadata(key string, value interface{})
+	SetMetadata(key string, value any)
 }

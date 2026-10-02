@@ -10,6 +10,7 @@ import (
 	"net/mail"
 	"net/textproto"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -87,8 +88,8 @@ type Session struct {
 	hostname      string // The hostname this session is serving
 	logger        *logging.SMTPLogger
 	startTime     time.Time
-	capabilities  Capabilities           // SMTP extensions enabled for this session
-	metadata      map[string]interface{} // Custom metadata from extensions (e.g., parsed tokens from EHLO hostname)
+	capabilities  Capabilities   // SMTP extensions enabled for this session
+	metadata      map[string]any // Custom metadata from extensions (e.g., parsed tokens from EHLO hostname)
 
 	// Per-session command delay in seconds (set by EHLO dlay<N>)
 	commandDelay int
@@ -139,8 +140,8 @@ func NewSessionWithHostname(conn net.Conn, config *Config, mailbox *storage.Mail
 		hostname:       hostname,
 		logger:         smtpLogger,
 		startTime:      time.Now(),
-		advertisedSize: 0,                            // 0 means fallback to global MaxMessageSize
-		metadata:       make(map[string]interface{}), // Initialise metadata map for extensions
+		advertisedSize: 0, // 0 means fallback to global MaxMessageSize
+		metadata:       make(map[string]any),
 	}
 
 	return session
@@ -326,13 +327,7 @@ func (s *Session) isCommandAllowedByExtension(ext SMTPExtension, command string)
 	}
 
 	// Check if current state is in allowed states
-	for _, state := range allowedStates {
-		if state == s.state {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(allowedStates, s.state)
 }
 
 // parseAndLogCommand parses, logs, and validates a command line. If it writes a response
@@ -1349,14 +1344,14 @@ func (s *Session) WriteResponse(response string) error {
 }
 
 // GetMetadata returns session metadata set by extensions (implements SessionWriter)
-func (s *Session) GetMetadata() map[string]interface{} {
+func (s *Session) GetMetadata() map[string]any {
 	return s.metadata
 }
 
 // SetMetadata stores custom data in session metadata (implements SessionWriter)
-func (s *Session) SetMetadata(key string, value interface{}) {
+func (s *Session) SetMetadata(key string, value any) {
 	if s.metadata == nil {
-		s.metadata = make(map[string]interface{})
+		s.metadata = make(map[string]any)
 	}
 	s.metadata[key] = value
 }
@@ -1485,26 +1480,14 @@ func (s *Session) readBDATChunk(n int) ([]byte, error) {
 // part is expected to start with "dlay" followed by digits
 func parseDlayValue(part string) int {
 	// part is expected to start with "dlay" followed by digits
-	if !strings.HasPrefix(part, "dlay") {
-		return 0
-	}
-	numStr := strings.TrimPrefix(part, "dlay")
-	if numStr == "" {
+	numStr, ok := strings.CutPrefix(part, "dlay")
+	if !ok || numStr == "" {
 		return 0
 	}
 	v, err := strconv.Atoi(numStr)
 	if err != nil {
 		return 0
 	}
-	// Clamp to allowed range 0..MaxInterCommandDelay
-	if v < 0 {
-		return 0
-	}
-	if v > MaxInterCommandDelay {
-		return MaxInterCommandDelay
-	}
-	if v == 0 {
-		return 0
-	}
-	return v
+	// Clamp to the allowed range 0..MaxInterCommandDelay
+	return max(0, min(v, MaxInterCommandDelay))
 }

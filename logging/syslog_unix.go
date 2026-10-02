@@ -49,7 +49,7 @@ func NewSyslogLogger(config *LogConfig) (Logger, error) {
 	}
 
 	return &syslogLogger{
-		baseLogger: baseLogger{config: *config, fields: make(map[string]interface{})},
+		baseLogger: baseLogger{config: *config, fields: make(map[string]any)},
 		writer:     writer,
 	}, nil
 }
@@ -100,7 +100,7 @@ func (l *syslogLogger) Error(msg string, err error, fields ...Field) {
 func (l *syslogLogger) With(fields ...Field) Logger {
 	newFields := maps.Clone(l.fields)
 	if newFields == nil {
-		newFields = make(map[string]interface{})
+		newFields = make(map[string]any)
 	}
 	for _, field := range fields {
 		newFields[field.Key] = field.Value

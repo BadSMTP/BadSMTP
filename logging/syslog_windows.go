@@ -27,7 +27,7 @@ func NewSyslogLogger(config *LogConfig) (Logger, error) {
 func (l *syslogLogger) With(fields ...Field) Logger {
 	newFields := maps.Clone(l.fields)
 	if newFields == nil {
-		newFields = make(map[string]interface{})
+		newFields = make(map[string]any)
 	}
 	for _, field := range fields {
 		newFields[field.Key] = field.Value

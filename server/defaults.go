@@ -79,7 +79,7 @@ func (da *DefaultAuthenticator) Authenticate(username, _ string) (user *User, er
 		ID:       username,
 		Username: username,
 		Active:   true,
-		Metadata: map[string]interface{}{
+		Metadata: map[string]any{
 			"auth_method": "pattern",
 		},
 	}
@@ -260,6 +260,6 @@ func NewDefaultCapabilityParser() *DefaultCapabilityParser {
 }
 
 // ParseCapabilities returns the parts unchanged with empty metadata (default behaviour).
-func (p *DefaultCapabilityParser) ParseCapabilities(_ string, parts []string) (modifiedParts []string, metadata map[string]interface{}) {
-	return parts, make(map[string]interface{})
+func (p *DefaultCapabilityParser) ParseCapabilities(_ string, parts []string) (modifiedParts []string, metadata map[string]any) {
+	return parts, make(map[string]any)
 }

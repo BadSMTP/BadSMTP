@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -156,7 +157,7 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) startPortListener(port int, description string) {
-	addr := net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))
+	addr := net.JoinHostPort(s.config.ListenAddress, strconv.Itoa(port))
 	var lc net.ListenConfig
 	listener, err := lc.Listen(context.Background(), "tcp", addr)
 	if err != nil {
@@ -204,7 +205,7 @@ func (s *Server) startPortListener(port int, description string) {
 
 func (s *Server) startPortRangeListeners(startPort, count int, description string) {
 	// Start only the discrete offsets defined in DelayOptions
-	for i := 0; i < count; i++ {
+	for i := range count {
 		port := startPort + i
 		delay := DelayOptions[i]
 		desc := fmt.Sprintf("%s (%ds)", description, delay)
@@ -242,7 +243,7 @@ func (s *Server) createTLSListener(port int) (net.Listener, error) {
 		MinVersion: MinTLSVersion,
 	}
 
-	addr := net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))
+	addr := net.JoinHostPort(s.config.ListenAddress, strconv.Itoa(port))
 	listener, err := tls.Listen("tcp", addr, tlsConfig)
 	if err != nil {
 		return nil, err
@@ -264,7 +265,7 @@ func (s *Server) startTLSPortListener(port int, description string) {
 				"TLS port already in use; skipping TLS listener",
 				logging.F("port", port),
 				logging.F("desc", description),
-				logging.F("addr", net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))),
+				logging.F("addr", net.JoinHostPort(s.config.ListenAddress, strconv.Itoa(port))),
 			)
 			return
 		}
@@ -273,7 +274,7 @@ func (s *Server) startTLSPortListener(port int, description string) {
 			err,
 			logging.F("port", port),
 			logging.F("desc", description),
-			logging.F("addr", net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))),
+			logging.F("addr", net.JoinHostPort(s.config.ListenAddress, strconv.Itoa(port))),
 		)
 		return
 	}
@@ -289,7 +290,7 @@ func (s *Server) startTLSPortListener(port int, description string) {
 		"Listening on TLS port",
 		logging.F("port", port),
 		logging.F("desc", description),
-		logging.F("addr", net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))),
+		logging.F("addr", net.JoinHostPort(s.config.ListenAddress, strconv.Itoa(port))),
 	)
 
 	for {

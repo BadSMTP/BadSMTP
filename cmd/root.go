@@ -4,6 +4,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"badsmtp/server"
@@ -39,7 +40,7 @@ var rootCmd = &cobra.Command{
 			configFound := false
 			for _, dir := range searchPaths {
 				for _, ext := range extensions {
-					configPath := fmt.Sprintf("%s/badsmtp.%s", dir, ext)
+					configPath := filepath.Join(dir, "badsmtp."+ext)
 					if _, err := os.Stat(configPath); err == nil {
 						if err := k.Load(kfile.Provider(configPath), kyaml.Parser()); err != nil {
 							return fmt.Errorf("failed to load config file %s: %w", configPath, err)
@@ -94,7 +95,7 @@ func getConfigSearchPaths() []string {
 
 	// Add $HOME/.badsmtp/ if HOME is set
 	if home := os.Getenv("HOME"); home != "" {
-		paths = append(paths, home+"/.badsmtp")
+		paths = append(paths, filepath.Join(home, ".badsmtp"))
 	}
 
 	// Add system-wide config directory

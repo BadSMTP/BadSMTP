@@ -54,7 +54,7 @@ func (m *mockAuthConn) SetWriteDeadline(time.Time) error { return nil }
 func TestNewHandler(t *testing.T) {
 	tests := []struct {
 		mechanism string
-		expected  interface{}
+		expected  any
 	}{
 		{"PLAIN", &PlainHandler{}},
 		{"LOGIN", &LoginHandler{}},
