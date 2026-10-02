@@ -15,6 +15,7 @@ import (
 	kposflag "github.com/knadh/koanf/providers/posflag"
 	"github.com/knadh/koanf/v2"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var rootCmd = &cobra.Command{
@@ -55,20 +56,30 @@ var rootCmd = &cobra.Command{
 			}
 		}
 
-		// Load environment variables (prefix BADSMTP) - medium priority, overrides config file
-		// use a replacer function to map ENV names to koanf keys
-		if err := k.Load(kenv.Provider("BADSMTP_", "_", createEnvReplacer().Replace), nil); err != nil {
+		// Load environment variables (prefix BADSMTP_) - medium priority, overrides
+		// config file. Strip the prefix and lower-case the name so that, for example,
+		// BADSMTP_LOG_LEVEL maps to the log_level config key.
+		envProvider := kenv.Provider("BADSMTP_", ".", func(s string) string {
+			return strings.ToLower(strings.TrimPrefix(s, "BADSMTP_"))
+		})
+		if err := k.Load(envProvider, nil); err != nil {
 			return fmt.Errorf("failed to load env: %w", err)
 		}
 
-		// Load command-line flags last (highest priority) - overrides everything
-		if err := k.Load(kposflag.Provider(cmd.PersistentFlags(), ":", k), nil); err != nil {
+		// Load command-line flags last (highest priority) - overrides everything.
+		// Normalise dashed flag names to the underscore config keys (e.g.
+		// --greeting-delay-port-start -> greeting_delay_port_start) so they line up
+		// with the mapstructure tags and config-file keys.
+		flagProvider := kposflag.ProviderWithFlag(cmd.PersistentFlags(), ".", k, func(f *pflag.Flag) (string, any) {
+			return flagConfigKey(f.Name), kposflag.FlagVal(cmd.PersistentFlags(), f)
+		})
+		if err := k.Load(flagProvider, nil); err != nil {
 			return fmt.Errorf("failed to load flags: %w", err)
 		}
 
-		// Unmarshal into typed config
+		// Unmarshal into typed config using the mapstructure struct tags.
 		var cfg server.Config
-		if err := k.Unmarshal("", &cfg); err != nil {
+		if err := k.UnmarshalWithConf("", &cfg, koanf.UnmarshalConf{Tag: "mapstructure"}); err != nil {
 			return fmt.Errorf("failed to unmarshal config: %w", err)
 		}
 
@@ -84,8 +95,19 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-func createEnvReplacer() *strings.Replacer {
-	return strings.NewReplacer("-", "_", ".", "_")
+// flagKeyAliases maps flag names whose friendly form differs from their config
+// key by more than dash/underscore spelling.
+var flagKeyAliases = map[string]string{
+	"mailbox": "mailbox_dir",
+}
+
+// flagConfigKey maps a flag name to its config key: an explicit alias if one
+// exists, otherwise the dashed name with dashes turned into underscores.
+func flagConfigKey(name string) string {
+	if alias, ok := flagKeyAliases[name]; ok {
+		return alias
+	}
+	return strings.ReplaceAll(name, "-", "_")
 }
 
 // getConfigSearchPaths returns the directories to search for config files, in order of precedence.
