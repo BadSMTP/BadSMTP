@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"badsmtp/auth"
@@ -71,6 +72,10 @@ type Session struct {
 	conn          net.Conn
 	connReader    *bufio.Reader
 	connTP        *textproto.Reader
+	// writeMu serialises writes to conn and access to responseQueue. The command
+	// loop and the shutdown path (CloseWith421) run in separate goroutines, so
+	// they must not write to the connection or touch the queue concurrently.
+	writeMu       sync.Mutex
 	state         smtp.State
 	heloName      string
 	mailFrom      string
@@ -1140,6 +1145,9 @@ func (s *Session) isResponse421(response string) bool {
 }
 
 func (s *Session) writeResponse(response string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
 	is421 := s.isResponse421(response)
 
 	// If pipelining mode is active, queue the response instead of sending immediately
@@ -1152,7 +1160,7 @@ func (s *Session) writeResponse(response string) error {
 	// If pipelining mode is active and we have a 421, flush queued responses,
 	// send the 421, close the connection and signal EOF to stop the session.
 	if s.pipeliningMode && is421 {
-		if err := s.flushResponses(); err != nil {
+		if err := s.flushResponsesLocked(); err != nil {
 			return err
 		}
 		// Ensure response lines are properly terminated
@@ -1195,8 +1203,12 @@ func (s *Session) CloseWith421(ctx context.Context, reason string) error {
 	}
 	resp := fmt.Sprintf("%d %s", smtp.Code421, msg)
 
+	// Serialise with the command loop's own writes/queue access.
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
 	// Flush any queued responses first
-	if err := s.flushResponses(); err != nil {
+	if err := s.flushResponsesLocked(); err != nil {
 		s.logger.Debug("flushResponses failed during shutdown", logging.F("err", err))
 		// continue trying to notify client even if flushing fails
 	}
@@ -1264,7 +1276,9 @@ func (s *Session) breaksPipelining(cmdName string) bool {
 }
 
 // flushResponses sends all queued responses at once.
-func (s *Session) flushResponses() error {
+// flushResponsesLocked sends and clears the queued pipelined responses. The
+// caller must hold s.writeMu.
+func (s *Session) flushResponsesLocked() error {
 	if len(s.responseQueue) == 0 {
 		return nil
 	}
@@ -1279,6 +1293,14 @@ func (s *Session) flushResponses() error {
 	// Clear the queue
 	s.responseQueue = nil
 	return nil
+}
+
+// flushResponses acquires the write lock and flushes the queued responses. Used
+// by the command loop; callers already holding s.writeMu use flushResponsesLocked.
+func (s *Session) flushResponses() error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return s.flushResponsesLocked()
 }
 
 // getAuthMechanisms returns auth mechanisms string based on capability parts.
