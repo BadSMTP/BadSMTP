@@ -2,9 +2,11 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"net"
+	"runtime/pprof"
 	"strings"
 	"testing"
 	"time"
@@ -94,7 +96,7 @@ func TestShutdownMultipleClients(t *testing.T) {
 
 	conns := make([]net.Conn, 0, 2)
 	readers := make([]*bufio.Reader, 0, 2)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 2*time.Second)
 		if err != nil {
 			t.Fatalf("failed to connect client %d: %v", i, err)
@@ -126,5 +128,63 @@ func TestShutdownMultipleClients(t *testing.T) {
 			t.Fatalf("expected 421 for client %d, got %q", i, resp)
 		}
 		_ = conns[i].Close()
+	}
+}
+
+// TestNoGoroutineLeaksAfterShutdown verifies that a full server lifecycle
+// (start, connect, disconnect, shutdown) leaves no leaked goroutines, using
+// the Go 1.27 goroutineleak pprof profile.
+func TestNoGoroutineLeaksAfterShutdown(t *testing.T) {
+	leakProfile := pprof.Lookup("goroutineleak")
+	if leakProfile == nil {
+		t.Fatal("goroutineleak profile not available")
+	}
+
+	// Reserve a port by listening on :0, then close and reuse the port for the server.
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatalf("failed to reserve port: %v", err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close()
+
+	cfg := &Config{Port: port}
+	cfg.EnsureDefaults()
+	srv, err := NewServer(cfg)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+
+	go func() { _ = srv.Start() }()
+
+	// Allow listener to start
+	time.Sleep(150 * time.Millisecond)
+
+	// Open and close a client connection so session goroutines are exercised.
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 2*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	r := bufio.NewReader(conn)
+	if _, err := r.ReadString('\n'); err != nil {
+		t.Fatalf("failed to read greeting: %v", err)
+	}
+	_ = conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown returned error: %v", err)
+	}
+
+	// Give the server a moment to finish tearing down session goroutines.
+	time.Sleep(150 * time.Millisecond)
+
+	if n := leakProfile.Count(); n > 0 {
+		var buf bytes.Buffer
+		if err := leakProfile.WriteTo(&buf, 1); err != nil {
+			t.Fatalf("failed to write goroutineleak profile: %v", err)
+		}
+		t.Fatalf("goroutineleak profile reported %d leaked goroutine(s) after shutdown:\n%s", n, buf.String())
 	}
 }

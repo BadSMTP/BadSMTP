@@ -1,7 +1,7 @@
 # BadSMTP SMTP Test Server Makefile
 
 BINARY_NAME=badsmtp
-GO_VERSION=1.25.5
+GO_VERSION=1.27.1
 PLATFORMS=linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64
 
 # Default target

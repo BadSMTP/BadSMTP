@@ -38,7 +38,7 @@ func teardown() {
 // Benchmark tests for performance measurement
 func BenchmarkSMTPSession(b *testing.B) {
 	// Benchmark a basic SMTP session
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// This would benchmark the core SMTP session handling
 		// For brevity, we'll just simulate some work
 		time.Sleep(1 * time.Microsecond)
@@ -47,7 +47,7 @@ func BenchmarkSMTPSession(b *testing.B) {
 
 func BenchmarkAuthenticationPLAIN(b *testing.B) {
 	// Benchmark PLAIN authentication
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// This would benchmark PLAIN authentication
 		time.Sleep(1 * time.Microsecond)
 	}
@@ -55,7 +55,7 @@ func BenchmarkAuthenticationPLAIN(b *testing.B) {
 
 func BenchmarkTLSHandshake(b *testing.B) {
 	// Benchmark TLS handshake
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// This would benchmark TLS handshake performance
 		time.Sleep(1 * time.Microsecond)
 	}
@@ -63,7 +63,7 @@ func BenchmarkTLSHandshake(b *testing.B) {
 
 func BenchmarkMessageStorage(b *testing.B) {
 	// Benchmark message storage
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// This would benchmark message storage performance
 		time.Sleep(1 * time.Microsecond)
 	}
@@ -284,7 +284,7 @@ func TestConcurrency(t *testing.T) {
 	results := make(chan int, 10)
 
 	// Start multiple goroutines
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(val int) {
 			defer wg.Done()

@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.25', 'nightly']
+        go-version: ['1.27', 'nightly']
     # Allow nightly compiler runs to fail (nightly builds may be unstable)
     continue-on-error: ${{ matrix.go-version == 'nightly' }}
 
@@ -34,7 +34,7 @@ jobs:
       uses: actions/setup-go@v6
       with:
         # Build Go tip with the current stable toolchain; bootstrapping tip now
-        # requires Go 1.26+, which the project's own 1.25 target cannot do.
+        # requires Go 1.26+, which the project's 1.27 target satisfies.
         go-version: 'stable'
 
     - name: Install gotip for nightly runs
@@ -128,7 +128,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: '1.25'
+        go-version: '1.27'
 
     - name: Gosec Security Checker
       uses: securego/gosec@v2.22.11
@@ -173,7 +173,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: '1.25'
+        go-version: '1.27'
     
     - name: Build binary
       env:
@@ -228,7 +228,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: '1.25'
+        go-version: '1.27'
     
     - name: Run performance tests
       run: |
@@ -260,11 +260,11 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6.1.0
       with:
-        go-version: '1.25'
+        go-version: '1.27'
 
     # Use the official action, which installs a prebuilt golangci-lint binary.
-    # Installing via `go install` would require Go 1.26+ to compile v2.14.0,
-    # whereas this project builds with Go 1.25.
+    # Installing via `go install` would require Go 1.26+ to compile v2.14.0;
+    # the prebuilt binary keeps the lint job independent of the toolchain.
     - name: Run golangci-lint
       uses: golangci/golangci-lint-action@v8
       with:
@@ -281,7 +281,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        go-version: ['1.25', 'nightly']
+        go-version: ['1.27', 'nightly']
     # Allow nightly compatibility runs to fail
     continue-on-error: ${{ matrix.go-version == 'nightly' }}
 
@@ -300,7 +300,7 @@ jobs:
       uses: actions/setup-go@v6
       with:
         # Build Go tip with the current stable toolchain; bootstrapping tip now
-        # requires Go 1.26+, which the project's own 1.25 target cannot do.
+        # requires Go 1.26+, which the project's 1.27 target satisfies.
         go-version: 'stable'
 
     - name: Install gotip for nightly runs
@@ -336,7 +336,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: '1.25'
+        go-version: '1.27'
     
     - name: Download all artifacts
       uses: actions/download-artifact@v7

@@ -2,7 +2,7 @@
 # BadSMTP Test Server Dockerfile
 
 # Build stage
-FROM golang:1.25-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 # Install git and ca-certificates (needed for downloading dependencies)
 RUN apk add --no-cache git ca-certificates

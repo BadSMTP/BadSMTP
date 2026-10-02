@@ -4,10 +4,10 @@ package logging
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"net"
 	"strings"
 	"time"
+	"uuid"
 )
 
 // SMTPLogger provides SMTP-specific logging methods
@@ -47,8 +47,8 @@ const SessionIDBytes = 12
 func generateSessionID() string {
 	b := make([]byte, SessionIDBytes)
 	if _, err := rand.Read(b); err != nil {
-		// Fallback: use timestamp-based ID if crypto/rand fails (very unlikely)
-		return fmt.Sprintf("sess_%x", time.Now().UnixNano())
+		// Fallback: use a random UUID if crypto/rand fails (very unlikely)
+		return "sess_" + uuid.New().String()
 	}
 	return "sess_" + hex.EncodeToString(b)
 }

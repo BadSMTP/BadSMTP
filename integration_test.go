@@ -107,10 +107,8 @@ func TestSMTPIntegration(t *testing.T) {
 	config.Port = port
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
@@ -126,7 +124,7 @@ func TestSMTPIntegration(t *testing.T) {
 				session.Handle()
 			}(conn)
 		}
-	}()
+	})
 
 	// Wait for server to start
 	time.Sleep(100 * time.Millisecond)

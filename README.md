@@ -91,7 +91,7 @@ sudo dpkg -i badsmtp-riscv64.deb
 ### Option 2: Build from Source
 
 > [!NOTE]
-> Remember that BadSMTP requires Go 1.25 or later.
+> Remember that BadSMTP requires Go 1.27 or later.
 
 1. **Build the server:**
 

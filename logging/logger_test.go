@@ -117,7 +117,7 @@ func TestWithAddsFieldsToEveryRecord(t *testing.T) {
 	child.Info("one")
 	child.Info("two")
 
-	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
 		m := parseJSONLine(t, line)
 		if m["session_id"] != "sess_abc" {
 			t.Errorf("record %q missing session_id", line)

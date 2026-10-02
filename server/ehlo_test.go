@@ -205,9 +205,9 @@ func (p *testCapabilityParser) ParseCapabilities(_ string, parts []string) (modi
 
 	// Example: Extract parts starting with "xtoken"
 	for _, part := range parts {
-		if strings.HasPrefix(part, "xtoken") {
+		if after, ok := strings.CutPrefix(part, "xtoken"); ok {
 			// Extract the token value after the prefix
-			token := strings.TrimPrefix(part, "xtoken")
+			token := after
 			metadata["auth_token"] = token
 		} else {
 			// Keep non-token parts for capability processing

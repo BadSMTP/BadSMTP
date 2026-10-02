@@ -171,13 +171,10 @@ func ValidateDomain(domain string) bool {
 // ValidateEmailAddress performs email address validation with UTF-8 domain support.
 func ValidateEmailAddress(email string) bool {
 	// Split email into local and domain parts
-	atIndex := strings.LastIndex(email, "@")
-	if atIndex == -1 || atIndex == 0 || atIndex == len(email)-1 {
+	localPart, domain, found := strings.CutLast(email, "@")
+	if !found || localPart == "" || domain == "" {
 		return false
 	}
-
-	localPart := email[:atIndex]
-	domain := email[atIndex+1:]
 
 	// Validate local part (simplified - allows common characters)
 	// RFC 5321 allows more complex local parts, but this covers common cases.

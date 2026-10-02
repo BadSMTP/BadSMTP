@@ -19,7 +19,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6 # pinned alt: uses: actions/setup-go@<sha-for-v6>
       with:
-        go-version: '1.25'
+        go-version: '1.27'
 
     # actions/setup-go@v6 caches the module and build caches by default (keyed on
     # go.sum), so no separate actions/cache step is needed.
@@ -62,11 +62,11 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6 # pinned alt: uses: actions/setup-go@<sha-for-v6>
       with:
-        go-version: '1.25'
+        go-version: '1.27'
 
     # Use the official action, which installs a prebuilt golangci-lint binary.
-    # Installing via `go install` would require Go 1.26+ to compile v2.14.0,
-    # whereas this project builds with Go 1.25.
+    # Installing via `go install` would require Go 1.26+ to compile v2.14.0;
+    # the prebuilt binary keeps the lint job independent of the toolchain.
     - name: Run golangci-lint
       uses: golangci/golangci-lint-action@v8
       with:
@@ -84,7 +84,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6 # pinned alt: uses: actions/setup-go@<sha-for-v6>
       with:
-        go-version: '1.25'
+        go-version: '1.27'
 
     - name: Build
       run: go build -v ./...

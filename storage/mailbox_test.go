@@ -422,7 +422,7 @@ func TestSaveMultipleMessages(t *testing.T) {
 	}
 
 	// Save multiple messages
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		message := &Message{
 			From:    "sender@example.com",
 			To:      []string{"recipient@example.com"},
@@ -515,8 +515,8 @@ func TestSaveMessageFilePermissions(t *testing.T) {
 
 // Helper function to extract received time from message content
 func extractReceivedTime(content string) time.Time {
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(content, "\n")
+	for line := range lines {
 		if strings.HasPrefix(line, "Received: by badsmtp.test;") {
 			// Extract timestamp from line
 			if _, rest, ok := strings.Cut(line, ";"); ok {

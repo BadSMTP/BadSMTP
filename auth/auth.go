@@ -11,10 +11,9 @@ import (
 	"hash"
 	"io"
 	"net/textproto"
-	"os"
 	"regexp"
 	"strings"
-	"time"
+	"uuid"
 )
 
 var (
@@ -116,7 +115,7 @@ func (h *LoginHandler) Authenticate(w io.Writer, r *textproto.Reader, _ []string
 
 // Authenticate handles CRAM-MD5 and CRAM-SHA256 authentication.
 func (h *CramHandler) Authenticate(w io.Writer, r *textproto.Reader, _ []string) (string, error) {
-	challenge := fmt.Sprintf("<%d.%d@badsmtp.test>", time.Now().Unix(), os.Getpid())
+	challenge := fmt.Sprintf("<%s@badsmtp.test>", uuid.New())
 	challengeB64 := base64.StdEncoding.EncodeToString([]byte(challenge))
 
 	response := "334 " + challengeB64

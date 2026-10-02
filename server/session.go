@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/mail"
 	"net/textproto"
@@ -33,8 +34,8 @@ var (
 func parseCapabilityLabel(hostname string) []string {
 	// Extract leftmost label before first dot
 	label := hostname
-	if idx := strings.Index(hostname, "."); idx != -1 {
-		label = hostname[:idx]
+	if before, _, ok := strings.Cut(hostname, "."); ok {
+		label = before
 	}
 
 	// Convert to lowercase for case-insensitive matching
@@ -161,8 +162,13 @@ func (s *Session) Handle() error {
 		}
 	}()
 
-	if err := s.setupSessionBehaviourAndGreet(); err != nil {
+	dropped, err := s.setupSessionBehaviourAndGreet()
+	if err != nil {
 		return err
+	}
+	if dropped {
+		// Drop ports close the connection without a greeting; do not enter the command loop.
+		return nil
 	}
 
 	// Create a shared buffered reader for the connection and store it on the session
@@ -458,27 +464,25 @@ func (s *Session) handleEhlo(hostname string) error {
 		return s.writeResponse("502 Command not implemented")
 	}
 
-	// Extract 'dlay' capability if present (format: dlay<digits>)
-	for i := 0; i < len(parts); i++ {
-		p := parts[i]
-		if strings.HasPrefix(p, "dlay") {
-			v := parseDlayValue(p)
-			if v <= 0 {
-				// ignore zero/invalid
-				parts = append(parts[:i], parts[i+1:]...)
-				i--
-				continue
-			}
-			// Apply to this session's per-session delay
-			s.commandDelay = v
-			// Remove this part from advertised capabilities
-			parts = append(parts[:i], parts[i+1:]...)
-			// Log and sleep before sending EHLO response
-			s.logger.LogBehaviourTriggered("command_delay", s.config.Port, v)
-			time.Sleep(time.Duration(v) * time.Second)
-			// adjust index since we removed current element
-			i--
+	// Extract 'dlay' capability if present (format: dlay<digits>).
+	// Iterate backward so removing a part does not shift unvisited elements.
+	for i, p := range slices.Backward(parts) {
+		if !strings.HasPrefix(p, "dlay") {
+			continue
 		}
+		v := parseDlayValue(p)
+		if v <= 0 {
+			// ignore zero/invalid
+			parts = append(parts[:i], parts[i+1:]...)
+			continue
+		}
+		// Apply to this session's per-session delay
+		s.commandDelay = v
+		// Remove this part from advertised capabilities
+		parts = append(parts[:i], parts[i+1:]...)
+		// Log and sleep before sending EHLO response
+		s.logger.LogBehaviourTriggered("command_delay", s.config.Port, v)
+		time.Sleep(time.Duration(v) * time.Second)
 	}
 
 	response := s.buildEhloResponseFromParts(hostname, parts)
@@ -494,9 +498,7 @@ func (s *Session) buildEhloResponseFromParts(hostname string, parts []string) []
 		modifiedParts, metadata := s.config.CapabilityParser.ParseCapabilities(hostname, parts)
 		parts = modifiedParts
 		// Store extracted metadata in session for access by other extensions
-		for k, v := range metadata {
-			s.metadata[k] = v
-		}
+		maps.Copy(s.metadata, metadata)
 	}
 
 	response := []string{fmt.Sprintf("%d-badsmtp.test", smtp.Code250)}
@@ -961,10 +963,13 @@ func (s *Session) handleNoop() error {
 }
 
 // setupSessionBehaviourAndGreet handles initial session behaviours (drops/delays) and sends the greeting.
-func (s *Session) setupSessionBehaviourAndGreet() error {
+// It returns dropped=true when the connection is to be dropped (immediately or
+// after a delay) without a greeting; in that case the session must not enter
+// the command loop.
+func (s *Session) setupSessionBehaviourAndGreet() (dropped bool, err error) {
 	if s.config.DropImmediate {
 		s.logger.LogBehaviourTriggered("immediate_drop", s.config.Port, 0)
-		return nil
+		return true, nil
 	}
 
 	if s.config.GreetingDelay > 0 {
@@ -975,7 +980,7 @@ func (s *Session) setupSessionBehaviourAndGreet() error {
 	if s.config.DropDelay > 0 {
 		s.logger.LogBehaviourTriggered("drop_delay", s.config.Port, s.config.DropDelay)
 		time.Sleep(time.Duration(s.config.DropDelay) * time.Second)
-		return nil
+		return true, nil
 	}
 
 	// Use configured hostname if present, otherwise fall back to the session hostname or default identity.
@@ -987,10 +992,10 @@ func (s *Session) setupSessionBehaviourAndGreet() error {
 	}
 
 	if err := s.writeResponse(fmt.Sprintf("%d %s ESMTP %s", smtp.Code220, identity, ServerGreeting)); err != nil {
-		return err
+		return false, err
 	}
 	s.state = smtp.StateHelo
-	return nil
+	return false, nil
 }
 
 // obtainTLSCertificate loads TLS certs from files or generates a self-signed certificate.
@@ -1123,8 +1128,8 @@ func (s *Session) isResponse421(response string) bool {
 	}
 	// Look at first line
 	first := response
-	if idx := strings.Index(response, "\r\n"); idx != -1 {
-		first = response[:idx]
+	if before, _, ok := strings.Cut(response, "\r\n"); ok {
+		first = before
 	}
 	first = strings.TrimLeft(first, " \t")
 	if len(first) >= 3 {

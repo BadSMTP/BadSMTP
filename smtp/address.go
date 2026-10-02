@@ -40,13 +40,11 @@ func ExtractMailboxFromArg(arg string) string {
 func NormaliseMailbox(mailbox string) string {
 	mailbox = strings.TrimSpace(mailbox)
 	// Split on the last '@' to correctly handle quoted local parts that contain '@'
-	at := strings.LastIndex(mailbox, "@")
-	if at == -1 {
+	local, domain, found := strings.CutLast(mailbox, "@")
+	if !found {
 		return ""
 	}
-	local := mailbox[:at]
-	domain := strings.ToLower(mailbox[at+1:])
-	return local + "@" + domain
+	return local + "@" + strings.ToLower(domain)
 }
 
 // isAllowedLocalRune reports whether r is an allowed character in an unquoted local part.
@@ -68,11 +66,10 @@ func isAllowedLocalRune(r rune, allowUTF8Local bool) bool {
 
 // checkParsedAddress enforces allowUTF8Local on a parsed mail address string.
 func checkParsedAddress(addr string, allowUTF8Local bool) bool {
-	at := strings.LastIndex(addr, "@")
-	if at == -1 {
+	local, _, found := strings.CutLast(addr, "@")
+	if !found {
 		return false
 	}
-	local := addr[:at]
 	if !allowUTF8Local {
 		for _, r := range local {
 			if r > maxASCII {
@@ -116,12 +113,10 @@ func IsValidMailbox(mailbox string, allowUTF8Local bool) bool {
 	}
 
 	// Fallback path
-	at := strings.LastIndex(mailbox, "@")
-	if at == -1 {
+	local, domain, found := strings.CutLast(mailbox, "@")
+	if !found {
 		return false
 	}
-	local := mailbox[:at]
-	domain := mailbox[at+1:]
 
 	if local == "" || domain == "" {
 		return false
@@ -151,7 +146,7 @@ func ParseAddress(raw string) string {
 	}
 
 	// Fallback: try tokens (space-separated) and attempt to parse each
-	for _, tok := range strings.Fields(raw) {
+	for tok := range strings.FieldsSeq(raw) {
 		trim := strings.Trim(tok, `<>,'"`)
 		if strings.Contains(trim, "@") {
 			if a2, err := mail.ParseAddress(trim); err == nil {

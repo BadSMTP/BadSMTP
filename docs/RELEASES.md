@@ -112,7 +112,7 @@ git push origin v1.0.0-beta.1
 
 The release workflow uses:
 
-- **Go version**: 1.25.5
+- **Go version**: 1.27.1
 - **CGO**: Disabled (for static binaries)
 - **Build flags**: `-trimpath -ldflags="-s -w -X main.Version=<version>"`
   - `-s`: Strip debug symbols
