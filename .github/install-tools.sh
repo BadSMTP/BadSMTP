@@ -13,13 +13,13 @@ echo "Installing CI tools with pinned versions..."
 echo "Ensuring GOPATH/bin is available"
 export PATH="$(go env GOPATH 2>/dev/null)/bin:$PATH"
 
-# Install golangci-lint
+# Install golangci-lint (v2 uses the /v2 module path)
 if [ -n "${GOLANGCI_LINT_VERSION:-}" ]; then
   echo "Installing golangci-lint ${GOLANGCI_LINT_VERSION}"
-  go install github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}
+  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}
 else
   echo "Installing golangci-lint latest"
-  go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 fi
 
 # Install staticcheck
