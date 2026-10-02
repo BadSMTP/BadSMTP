@@ -1,13 +1,21 @@
 package auth
 
 import (
+	"bufio"
 	"encoding/base64"
 	"fmt"
 	"net"
+	"net/textproto"
 	"strings"
 	"testing"
 	"time"
 )
+
+// authReader wraps a connection the way a live session does, so handlers read
+// through a buffered textproto reader rather than straight off the socket.
+func authReader(conn net.Conn) *textproto.Reader {
+	return textproto.NewReader(bufio.NewReader(conn))
+}
 
 // Mock connection for testing
 type mockAuthConn struct {
@@ -135,7 +143,7 @@ func TestPlainHandlerAuthenticate(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			conn := newMockAuthConn([]string{})
-			username, err := handler.Authenticate(conn, test.args)
+			username, err := handler.Authenticate(conn, authReader(conn), test.args)
 
 			if test.hasError {
 				if err == nil {
@@ -202,7 +210,7 @@ func TestLoginHandlerAuthenticate(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			conn := newMockAuthConn(test.responses)
-			username, err := handler.Authenticate(conn, test.args)
+			username, err := handler.Authenticate(conn, authReader(conn), test.args)
 
 			if test.hasError {
 				if err == nil {
@@ -263,7 +271,7 @@ func TestCramHandlerAuthenticate(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			conn := newMockAuthConn(test.responses)
-			username, err := handler.Authenticate(conn, test.args)
+			username, err := handler.Authenticate(conn, authReader(conn), test.args)
 
 			if test.hasError {
 				if err == nil {
@@ -324,7 +332,7 @@ func TestXOAuth2HandlerAuthenticate(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			conn := newMockAuthConn(test.responses)
-			username, err := handler.Authenticate(conn, test.args)
+			username, err := handler.Authenticate(conn, authReader(conn), test.args)
 
 			if test.hasError {
 				if err == nil {
@@ -400,7 +408,7 @@ func TestAuthenticationFlow(t *testing.T) {
 			}
 
 			conn := newMockAuthConn(responses)
-			username, err := handler.Authenticate(conn, args)
+			username, err := handler.Authenticate(conn, authReader(conn), args)
 
 			if err != nil {
 				t.Errorf("Authentication failed for mechanism %s: %v", mechanism, err)
@@ -450,7 +458,7 @@ func TestAuthenticationFailures(t *testing.T) {
 			}
 
 			conn := newMockAuthConn(responses)
-			username, err := handler.Authenticate(conn, args)
+			username, err := handler.Authenticate(conn, authReader(conn), args)
 
 			if err != nil {
 				t.Errorf("Authentication parsing failed for mechanism %s: %v", mechanism, err)
@@ -488,7 +496,7 @@ func TestBase64Handling(t *testing.T) {
 
 			// Try to use the base64 input in a PLAIN auth
 			args := []string{"AUTH", "PLAIN", test.input}
-			_, err := handler.Authenticate(conn, args)
+			_, err := handler.Authenticate(conn, authReader(conn), args)
 
 			if test.hasError {
 				if err == nil {

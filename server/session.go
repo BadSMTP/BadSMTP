@@ -632,7 +632,7 @@ func (s *Session) handleAuth(cmd *smtp.Command) error {
 		return s.writeResponse("504 Authentication mechanism not supported")
 	}
 
-	username, err := handler.Authenticate(s.conn, append([]string{cmd.Name}, cmd.Args...))
+	username, err := handler.Authenticate(s.conn, s.connTP, append([]string{cmd.Name}, cmd.Args...))
 	if err != nil {
 		s.logger.LogAuthentication(mech, username, false)
 		return s.writeResponse("535 Authentication failed")

@@ -2,7 +2,6 @@
 package auth
 
 import (
-	"bufio"
 	"crypto/hmac"
 	"crypto/md5" //nolint:gosec // CRAM-MD5 is defined in terms of HMAC-MD5 (RFC 2195)
 	"crypto/sha256"
@@ -10,7 +9,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash"
-	"net"
+	"io"
 	"net/textproto"
 	"os"
 	"regexp"
@@ -23,8 +22,12 @@ var (
 )
 
 // Handler is the interface for authentication handlers.
+//
+// Prompts are written to w and client responses are read from r. r must be the
+// session's own buffered reader so that bytes already pulled past the AUTH line
+// (common with pipelining or TLS records) are not lost to a separate reader.
 type Handler interface {
-	Authenticate(conn net.Conn, parts []string) (string, error)
+	Authenticate(w io.Writer, r *textproto.Reader, parts []string) (string, error)
 }
 
 // PlainHandler implements the PLAIN authentication mechanism.
@@ -42,19 +45,19 @@ type CramHandler struct{}
 type XOAuth2Handler struct{}
 
 // Authenticate handles PLAIN authentication.
-func (h *PlainHandler) Authenticate(conn net.Conn, parts []string) (string, error) {
+func (h *PlainHandler) Authenticate(_ io.Writer, r *textproto.Reader, parts []string) (string, error) {
 	var authData string
 
 	// Check if auth data is provided in the command args (AUTH PLAIN <data>)
 	if len(parts) >= 3 {
 		authData = parts[2]
 	} else if len(parts) == 2 {
-		// Interactive mode - read from connection using textproto
-		br := bufio.NewReader(conn)
-		tp := textproto.NewReader(br)
-		if line, err := tp.ReadLine(); err == nil {
-			authData = strings.TrimSpace(line)
+		// Interactive mode - read the credential line from the session reader
+		line, err := r.ReadLine()
+		if err != nil {
+			return "", fmt.Errorf("failed to read auth data: %w", err)
 		}
+		authData = strings.TrimSpace(line)
 	} else {
 		return "", fmt.Errorf("invalid PLAIN command")
 	}
@@ -78,16 +81,14 @@ func (h *PlainHandler) Authenticate(conn net.Conn, parts []string) (string, erro
 }
 
 // Authenticate handles LOGIN authentication.
-func (h *LoginHandler) Authenticate(conn net.Conn, _ []string) (string, error) {
+func (h *LoginHandler) Authenticate(w io.Writer, r *textproto.Reader, _ []string) (string, error) {
 	// Send username prompt
 	usernamePrompt := "334 " + base64.StdEncoding.EncodeToString([]byte("Username:"))
-	if _, err := conn.Write([]byte(usernamePrompt + "\r\n")); err != nil {
+	if _, err := w.Write([]byte(usernamePrompt + "\r\n")); err != nil {
 		return "", err
 	}
 
-	br := bufio.NewReader(conn)
-	tp := textproto.NewReader(br)
-	usernameLine, err := tp.ReadLine()
+	usernameLine, err := r.ReadLine()
 	if err != nil {
 		return "", fmt.Errorf("failed to read username")
 	}
@@ -99,11 +100,11 @@ func (h *LoginHandler) Authenticate(conn net.Conn, _ []string) (string, error) {
 
 	// Send password prompt
 	passwordPrompt := "334 " + base64.StdEncoding.EncodeToString([]byte("Password:"))
-	if _, err := conn.Write([]byte(passwordPrompt + "\r\n")); err != nil {
+	if _, err := w.Write([]byte(passwordPrompt + "\r\n")); err != nil {
 		return "", err
 	}
 
-	passwordLine, err := tp.ReadLine()
+	passwordLine, err := r.ReadLine()
 	if err != nil {
 		return "", fmt.Errorf("failed to read password")
 	}
@@ -114,18 +115,16 @@ func (h *LoginHandler) Authenticate(conn net.Conn, _ []string) (string, error) {
 }
 
 // Authenticate handles CRAM-MD5 and CRAM-SHA256 authentication.
-func (h *CramHandler) Authenticate(conn net.Conn, _ []string) (string, error) {
+func (h *CramHandler) Authenticate(w io.Writer, r *textproto.Reader, _ []string) (string, error) {
 	challenge := fmt.Sprintf("<%d.%d@badsmtp.test>", time.Now().Unix(), os.Getpid())
 	challengeB64 := base64.StdEncoding.EncodeToString([]byte(challenge))
 
 	response := "334 " + challengeB64
-	if _, err := conn.Write([]byte(response + "\r\n")); err != nil {
+	if _, err := w.Write([]byte(response + "\r\n")); err != nil {
 		return "", err
 	}
 
-	br := bufio.NewReader(conn)
-	tp := textproto.NewReader(br)
-	responseLine, err := tp.ReadLine()
+	responseLine, err := r.ReadLine()
 	if err != nil {
 		return "", fmt.Errorf("failed to read response")
 	}
@@ -145,21 +144,19 @@ func (h *CramHandler) Authenticate(conn net.Conn, _ []string) (string, error) {
 }
 
 // Authenticate handles XOAUTH2 authentication.
-func (h *XOAuth2Handler) Authenticate(conn net.Conn, parts []string) (string, error) {
+func (h *XOAuth2Handler) Authenticate(w io.Writer, r *textproto.Reader, parts []string) (string, error) {
 	var authDataB64 string
 
 	// Check if auth data is provided in the command args (AUTH XOAUTH2 <data>)
 	if len(parts) >= 3 {
 		authDataB64 = parts[2]
 	} else if len(parts) == 2 {
-		// Interactive mode - send challenge and read from connection
-		if _, err := conn.Write([]byte("334 \r\n")); err != nil {
+		// Interactive mode - send challenge and read from the session reader
+		if _, err := w.Write([]byte("334 \r\n")); err != nil {
 			return "", err
 		}
 
-		br := bufio.NewReader(conn)
-		tp := textproto.NewReader(br)
-		line, err := tp.ReadLine()
+		line, err := r.ReadLine()
 		if err != nil {
 			return "", fmt.Errorf("failed to read response")
 		}
