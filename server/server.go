@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,6 +32,9 @@ const (
 
 	// DefaultShutdownTimeout is the graceful shutdown timeout used by the server
 	DefaultShutdownTimeout = 10 * time.Second
+
+	// dnsLookupTimeout bounds reverse DNS lookups used for hostname detection
+	dnsLookupTimeout = 2 * time.Second
 )
 
 // Server represents an SMTP test server instance
@@ -153,8 +157,9 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) startPortListener(port int, description string) {
-	addr := net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))
-	listener, err := net.Listen("tcp", addr)
+	addr := net.JoinHostPort(s.config.ListenAddress, strconv.Itoa(port))
+	var lc net.ListenConfig
+	listener, err := lc.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		// If the port is already in use, log a warning and skip starting this listener.
 		var warnErr bool
@@ -200,7 +205,7 @@ func (s *Server) startPortListener(port int, description string) {
 
 func (s *Server) startPortRangeListeners(startPort, count int, description string) {
 	// Start only the discrete offsets defined in DelayOptions
-	for i := 0; i < count; i++ {
+	for i := range count {
 		port := startPort + i
 		delay := DelayOptions[i]
 		desc := fmt.Sprintf("%s (%ds)", description, delay)
@@ -219,8 +224,9 @@ func (s *Server) createTLSListener(port int) (net.Listener, error) {
 				hostname = s.config.GetTLSHostname()
 			}
 
-			// Try to load certificate from files first
-			if s.config.HasTLS() {
+			// Use the configured certificate when real cert files are provided;
+			// only warn and fall back to self-signed if loading them fails.
+			if s.config.HasTLSCertFiles() {
 				if cert, err := tls.LoadX509KeyPair(s.config.TLSCertFile, s.config.TLSKeyFile); err == nil {
 					return &cert, nil
 				}
@@ -237,7 +243,7 @@ func (s *Server) createTLSListener(port int) (net.Listener, error) {
 		MinVersion: MinTLSVersion,
 	}
 
-	addr := net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))
+	addr := net.JoinHostPort(s.config.ListenAddress, strconv.Itoa(port))
 	listener, err := tls.Listen("tcp", addr, tlsConfig)
 	if err != nil {
 		return nil, err
@@ -259,7 +265,7 @@ func (s *Server) startTLSPortListener(port int, description string) {
 				"TLS port already in use; skipping TLS listener",
 				logging.F("port", port),
 				logging.F("desc", description),
-				logging.F("addr", net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))),
+				logging.F("addr", net.JoinHostPort(s.config.ListenAddress, strconv.Itoa(port))),
 			)
 			return
 		}
@@ -268,7 +274,7 @@ func (s *Server) startTLSPortListener(port int, description string) {
 			err,
 			logging.F("port", port),
 			logging.F("desc", description),
-			logging.F("addr", net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))),
+			logging.F("addr", net.JoinHostPort(s.config.ListenAddress, strconv.Itoa(port))),
 		)
 		return
 	}
@@ -284,7 +290,7 @@ func (s *Server) startTLSPortListener(port int, description string) {
 		"Listening on TLS port",
 		logging.F("port", port),
 		logging.F("desc", description),
-		logging.F("addr", net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))),
+		logging.F("addr", net.JoinHostPort(s.config.ListenAddress, strconv.Itoa(port))),
 	)
 
 	for {
@@ -359,8 +365,11 @@ func (s *Server) extractHostname(conn net.Conn) string {
 	// This works when using different hostnames that resolve to the same IP
 	localAddr := conn.LocalAddr()
 	if tcpAddr, ok := localAddr.(*net.TCPAddr); ok {
-		// Try to do a reverse DNS lookup to get the hostname
-		if names, err := net.LookupAddr(tcpAddr.IP.String()); err == nil && len(names) > 0 {
+		// Try to do a reverse DNS lookup to get the hostname, bounded by a timeout
+		ctx, cancel := context.WithTimeout(context.Background(), dnsLookupTimeout)
+		defer cancel()
+		var resolver net.Resolver
+		if names, err := resolver.LookupAddr(ctx, tcpAddr.IP.String()); err == nil && len(names) > 0 {
 			// Return the first hostname found
 			hostname := names[0]
 			// Remove trailing dot if present
@@ -463,9 +472,13 @@ func (s *Server) closeAllListeners() {
 // to terminate with a 421 and wait up to the provided context for them to finish.
 func (s *Server) Shutdown(ctx context.Context) error {
 	if !atomic.CompareAndSwapInt32(&s.shuttingDown, 0, 1) {
-		// already shutting down
+		// already shutting down; the goroutine that won the CAS owns closing s.done
 		return nil
 	}
+
+	// Signal Start to return once shutdown finishes, on every path below. The CAS
+	// above guarantees only one goroutine reaches here, so this closes exactly once.
+	defer close(s.done)
 
 	// Stop accepting new connections
 	s.closeAllListeners()

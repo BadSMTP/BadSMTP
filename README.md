@@ -634,29 +634,45 @@ BadSMTP provides comprehensive structured logging for detailed SMTP interaction 
 
 ```json
 {
-  "timestamp": "2025-01-05T10:36:21Z",
+  "time": "2026-01-05T10:36:21.123Z",
   "level": "INFO",
-  "message": "SMTP connection established",
-  "fields": {
-    "session_id": "sess_abc123",
-    "client_ip": "192.168.1.100",
-    "port": 2525,
-    "tls_enabled": false,
-    "hostname": "badsmtp.test"
-  }
+  "msg": "SMTP connection established",
+  "session_id": "sess_abc123",
+  "client_ip": "192.168.1.100",
+  "port": 2525,
+  "tls_enabled": false,
+  "hostname": "badsmtp.test"
 }
 ```
 
+Logging is configurable via flags, environment variables, or the config file
+(same precedence as all other options):
+
+| Flag                 | Config key / env var                          | Description                          | Default  |
+|----------------------|-----------------------------------------------|--------------------------------------|----------|
+| `--log-level`        | `log_level` / `BADSMTP_LOG_LEVEL`             | `debug`, `info`, `warn`, `error`     | `info`   |
+| `--log-format`       | `log_format` / `BADSMTP_LOG_FORMAT`           | `json` or `text`                     | `json`   |
+| `--log-output`       | `log_output` / `BADSMTP_LOG_OUTPUT`           | `stdout`, `syslog`, `tcp`, `udp`     | `stdout` |
+| `--log-remote-addr`  | `log_remote_addr` / `BADSMTP_LOG_REMOTE_ADDR` | `host:port` for `tcp`/`udp` output   | (none)   |
+| `--syslog-facility`  | `syslog_facility` / `BADSMTP_SYSLOG_FACILITY` | `mail`, `daemon`, `local0`-`local7`  | `mail`   |
+| `--log-trace`        | `log_trace` / `BADSMTP_LOG_TRACE`             | Include source file/line in records  | `false`  |
+
 ### Debug Mode
 
-Enable verbose logging by setting log level:
+Enable verbose logging by setting the log level:
 
 ```bash
 # Run with debug output
-LOG_LEVEL=DEBUG ./badsmtp
+./badsmtp --log-level debug
 
-# JSON format with external logging
-LOG_FORMAT=json LOG_OUTPUT=tcp LOG_REMOTE_ADDR=logserver:514 ./badsmtp
+# Text format for human-readable console output
+./badsmtp --log-format text --log-level debug
+
+# Ship logs to an external collector over TCP
+./badsmtp --log-output tcp --log-remote-addr logserver:514
+
+# The same options work as environment variables
+BADSMTP_LOG_LEVEL=debug ./badsmtp
 ```
 
 ## Configuration reference

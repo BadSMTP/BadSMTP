@@ -217,7 +217,16 @@ type Config struct {
 	CapabilityParser CapabilityParser `mapstructure:"-"` // EHLO hostname capability parsing (default: pass-through)
 	SMTPExtensions   []SMTPExtension  `mapstructure:"-"` // Custom SMTP commands and capabilities (default: empty slice)
 
-	// Logging configuration
+	// Logging configuration. These raw fields are populated from flags, env and
+	// config files, then assembled into LogConfig by EnsureDefaults.
+	LogLevel       string `mapstructure:"log_level"`       // debug, info, warn, error
+	LogFormat      string `mapstructure:"log_format"`      // json or text
+	LogOutput      string `mapstructure:"log_output"`      // stdout, syslog, tcp, udp
+	LogRemoteAddr  string `mapstructure:"log_remote_addr"` // host:port for tcp/udp output
+	SyslogFacility string `mapstructure:"syslog_facility"` // mail, daemon, local0-local7
+	LogTrace       bool   `mapstructure:"log_trace"`       // include source file/line
+
+	// LogConfig is assembled from the fields above, or may be set directly by callers.
 	LogConfig logging.LogConfig `mapstructure:"-"`
 }
 
@@ -226,7 +235,35 @@ type Config struct {
 func (c *Config) EnsureDefaults() {
 	c.ensureScalarDefaults()
 	c.ensureMapDefaults()
+	c.ensureLogConfig()
 	c.ensureExtensionDefaults()
+}
+
+// ensureLogConfig assembles LogConfig from the raw logging fields, starting from
+// the package defaults and overriding with any values that were provided. If a
+// caller set LogConfig directly it is left untouched.
+func (c *Config) ensureLogConfig() {
+	if c.LogConfig != (logging.LogConfig{}) {
+		return
+	}
+	cfg := logging.DefaultConfig()
+	if c.LogLevel != "" {
+		cfg.Level = logging.ParseLogLevel(c.LogLevel)
+	}
+	if c.LogFormat != "" {
+		cfg.Format = c.LogFormat
+	}
+	if c.LogOutput != "" {
+		cfg.Output = c.LogOutput
+	}
+	if c.LogRemoteAddr != "" {
+		cfg.RemoteAddr = c.LogRemoteAddr
+	}
+	if c.SyslogFacility != "" {
+		cfg.SyslogFacility = c.SyslogFacility
+	}
+	cfg.IncludeTrace = c.LogTrace
+	c.LogConfig = cfg
 }
 
 func (c *Config) ensureScalarDefaults() {
@@ -333,10 +370,17 @@ func (c *Config) GetMailboxDir(hostname string) string {
 	return c.MailboxDir
 }
 
-// HasTLS checks if TLS is enabled.
+// HasTLS reports whether the server offers TLS. It always does: a configured
+// certificate is used when available, otherwise a self-signed one is generated
+// on demand, so TLS ports and STARTTLS are always offered.
 func (c *Config) HasTLS() bool {
-	// TLS is available if certificate files are provided OR if we can generate self-signed certificates
-	return (c.TLSCertFile != "" && c.TLSKeyFile != "") || true
+	return true
+}
+
+// HasTLSCertFiles reports whether a real certificate/key pair has been
+// configured. When false the server falls back to self-signed certificates.
+func (c *Config) HasTLSCertFiles() bool {
+	return c.TLSCertFile != "" && c.TLSKeyFile != ""
 }
 
 // GetTLSHostname returns the hostname for TLS certificates.
@@ -346,6 +390,10 @@ func (c *Config) GetTLSHostname() string {
 	}
 	return DefaultTLSHostname
 }
+
+// selfSignedCertField is the placeholder value used for the subject fields of
+// generated self-signed certificates.
+const selfSignedCertField = "Test"
 
 // GenerateSelfSignedCert generates a self-signed certificate for the given hostname.
 func (c *Config) GenerateSelfSignedCert(hostname string) (tls.Certificate, error) {
@@ -362,9 +410,9 @@ func (c *Config) GenerateSelfSignedCert(hostname string) (tls.Certificate, error
 			//nolint:misspell // 'Organization' is the stdlib field name
 			Organization:       []string{"BadSMTP Test Server"},
 			Country:            []string{"US"},
-			Province:           []string{"Test"},
-			Locality:           []string{"Test"},
-			OrganizationalUnit: []string{"Test"},
+			Province:           []string{selfSignedCertField},
+			Locality:           []string{selfSignedCertField},
+			OrganizationalUnit: []string{selfSignedCertField},
 			CommonName:         hostname,
 		},
 		NotBefore:             time.Now(),

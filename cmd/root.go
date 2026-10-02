@@ -4,16 +4,18 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"badsmtp/server"
 
-	"github.com/knadh/koanf"
 	kyaml "github.com/knadh/koanf/parsers/yaml"
 	kenv "github.com/knadh/koanf/providers/env"
 	kfile "github.com/knadh/koanf/providers/file"
 	kposflag "github.com/knadh/koanf/providers/posflag"
+	"github.com/knadh/koanf/v2"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var rootCmd = &cobra.Command{
@@ -39,7 +41,7 @@ var rootCmd = &cobra.Command{
 			configFound := false
 			for _, dir := range searchPaths {
 				for _, ext := range extensions {
-					configPath := fmt.Sprintf("%s/badsmtp.%s", dir, ext)
+					configPath := filepath.Join(dir, "badsmtp."+ext)
 					if _, err := os.Stat(configPath); err == nil {
 						if err := k.Load(kfile.Provider(configPath), kyaml.Parser()); err != nil {
 							return fmt.Errorf("failed to load config file %s: %w", configPath, err)
@@ -54,20 +56,30 @@ var rootCmd = &cobra.Command{
 			}
 		}
 
-		// Load environment variables (prefix BADSMTP) - medium priority, overrides config file
-		// use a replacer function to map ENV names to koanf keys
-		if err := k.Load(kenv.Provider("BADSMTP_", "_", createEnvReplacer().Replace), nil); err != nil {
+		// Load environment variables (prefix BADSMTP_) - medium priority, overrides
+		// config file. Strip the prefix and lower-case the name so that, for example,
+		// BADSMTP_LOG_LEVEL maps to the log_level config key.
+		envProvider := kenv.Provider("BADSMTP_", ".", func(s string) string {
+			return strings.ToLower(strings.TrimPrefix(s, "BADSMTP_"))
+		})
+		if err := k.Load(envProvider, nil); err != nil {
 			return fmt.Errorf("failed to load env: %w", err)
 		}
 
-		// Load command-line flags last (highest priority) - overrides everything
-		if err := k.Load(kposflag.Provider(cmd.PersistentFlags(), ":", k), nil); err != nil {
+		// Load command-line flags last (highest priority) - overrides everything.
+		// Normalise dashed flag names to the underscore config keys (e.g.
+		// --greeting-delay-port-start -> greeting_delay_port_start) so they line up
+		// with the mapstructure tags and config-file keys.
+		flagProvider := kposflag.ProviderWithFlag(cmd.PersistentFlags(), ".", k, func(f *pflag.Flag) (string, any) {
+			return flagConfigKey(f.Name), kposflag.FlagVal(cmd.PersistentFlags(), f)
+		})
+		if err := k.Load(flagProvider, nil); err != nil {
 			return fmt.Errorf("failed to load flags: %w", err)
 		}
 
-		// Unmarshal into typed config
+		// Unmarshal into typed config using the mapstructure struct tags.
 		var cfg server.Config
-		if err := k.Unmarshal("", &cfg); err != nil {
+		if err := k.UnmarshalWithConf("", &cfg, koanf.UnmarshalConf{Tag: "mapstructure"}); err != nil {
 			return fmt.Errorf("failed to unmarshal config: %w", err)
 		}
 
@@ -83,8 +95,19 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-func createEnvReplacer() *strings.Replacer {
-	return strings.NewReplacer("-", "_", ".", "_")
+// flagKeyAliases maps flag names whose friendly form differs from their config
+// key by more than dash/underscore spelling.
+var flagKeyAliases = map[string]string{
+	"mailbox": "mailbox_dir",
+}
+
+// flagConfigKey maps a flag name to its config key: an explicit alias if one
+// exists, otherwise the dashed name with dashes turned into underscores.
+func flagConfigKey(name string) string {
+	if alias, ok := flagKeyAliases[name]; ok {
+		return alias
+	}
+	return strings.ReplaceAll(name, "-", "_")
 }
 
 // getConfigSearchPaths returns the directories to search for config files, in order of precedence.
@@ -94,7 +117,7 @@ func getConfigSearchPaths() []string {
 
 	// Add $HOME/.badsmtp/ if HOME is set
 	if home := os.Getenv("HOME"); home != "" {
-		paths = append(paths, home+"/.badsmtp")
+		paths = append(paths, filepath.Join(home, ".badsmtp"))
 	}
 
 	// Add system-wide config directory
@@ -126,6 +149,15 @@ func RegisterFlags() {
 	pf.Int("tls-port", server.DefaultTLSPort, "Port for implicit TLS (SMTPS)")
 	pf.Int("starttls-port", server.DefaultSTARTTLSPort, "Port for STARTTLS")
 	pf.String("tls-hostname", server.DefaultTLSHostname, "Hostname for TLS certificate")
+
+	// Logging configuration (empty defaults so unset flags fall back to config
+	// file/env values and finally the built-in logging defaults)
+	pf.String("log-level", "", "Log level: debug, info, warn, error (default: info)")
+	pf.String("log-format", "", "Log format: json or text (default: json)")
+	pf.String("log-output", "", "Log output: stdout, syslog, tcp, udp (default: stdout)")
+	pf.String("log-remote-addr", "", "Remote address (host:port) for tcp/udp log output")
+	pf.String("syslog-facility", "", "Syslog facility: mail, daemon, local0-local7 (default: mail)")
+	pf.Bool("log-trace", false, "Include source file and line in log records")
 }
 
 // Execute sets the version and runs the root command.

@@ -10,8 +10,10 @@ import (
 	"net/mail"
 	"net/textproto"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"badsmtp/auth"
@@ -68,9 +70,13 @@ type Capabilities struct {
 
 // Session represents a single SMTP client connection
 type Session struct {
-	conn          net.Conn
-	connReader    *bufio.Reader
-	connTP        *textproto.Reader
+	conn       net.Conn
+	connReader *bufio.Reader
+	connTP     *textproto.Reader
+	// writeMu serialises writes to conn and access to responseQueue. The command
+	// loop and the shutdown path (CloseWith421) run in separate goroutines, so
+	// they must not write to the connection or touch the queue concurrently.
+	writeMu       sync.Mutex
 	state         smtp.State
 	heloName      string
 	mailFrom      string
@@ -82,8 +88,8 @@ type Session struct {
 	hostname      string // The hostname this session is serving
 	logger        *logging.SMTPLogger
 	startTime     time.Time
-	capabilities  Capabilities           // SMTP extensions enabled for this session
-	metadata      map[string]interface{} // Custom metadata from extensions (e.g., parsed tokens from EHLO hostname)
+	capabilities  Capabilities   // SMTP extensions enabled for this session
+	metadata      map[string]any // Custom metadata from extensions (e.g., parsed tokens from EHLO hostname)
 
 	// Per-session command delay in seconds (set by EHLO dlay<N>)
 	commandDelay int
@@ -134,8 +140,8 @@ func NewSessionWithHostname(conn net.Conn, config *Config, mailbox *storage.Mail
 		hostname:       hostname,
 		logger:         smtpLogger,
 		startTime:      time.Now(),
-		advertisedSize: 0,                            // 0 means fallback to global MaxMessageSize
-		metadata:       make(map[string]interface{}), // Initialise metadata map for extensions
+		advertisedSize: 0, // 0 means fallback to global MaxMessageSize
+		metadata:       make(map[string]any),
 	}
 
 	return session
@@ -267,10 +273,9 @@ func (s *Session) handleCommand(line string) error {
 		s.pipeliningMode = false
 	}
 
-	handlers := s.commandHandlers()
 	var cmdErr error
-	if h, ok := handlers[cmd.Name]; ok {
-		cmdErr = h(cmd)
+	if h, ok := commandDispatch[cmd.Name]; ok {
+		cmdErr = h(s, cmd)
 	} else {
 		// Try custom SMTP extensions
 		handled, err := s.tryExtensionHandlers(cmd)
@@ -322,13 +327,7 @@ func (s *Session) isCommandAllowedByExtension(ext SMTPExtension, command string)
 	}
 
 	// Check if current state is in allowed states
-	for _, state := range allowedStates {
-		if state == s.state {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(allowedStates, s.state)
 }
 
 // parseAndLogCommand parses, logs, and validates a command line. If it writes a response
@@ -399,22 +398,22 @@ func (s *Session) parseAndLogCommand(line string) (*smtp.Command, []string, erro
 	return cmd, loggedArgs, nil
 }
 
-// commandHandlers returns the dispatch map for SMTP commands.
-func (s *Session) commandHandlers() map[string]func(*smtp.Command) error {
-	return map[string]func(*smtp.Command) error{
-		smtp.CmdHELO:     func(c *smtp.Command) error { return s.handleHelo(c) },
-		smtp.CmdEHLO:     func(c *smtp.Command) error { return s.handleHelo(c) },
-		smtp.CmdAUTH:     func(c *smtp.Command) error { return s.handleAuth(c) },
-		smtp.CmdMAIL:     func(c *smtp.Command) error { return s.handleMail(c) },
-		smtp.CmdRCPT:     func(c *smtp.Command) error { return s.handleRcpt(c) },
-		smtp.CmdDATA:     func(_ *smtp.Command) error { return s.handleData() },
-		smtp.CmdBDAT:     func(c *smtp.Command) error { return s.handleBdat(c) },
-		smtp.CmdRSET:     func(_ *smtp.Command) error { return s.handleRset() },
-		smtp.CmdNOOP:     func(_ *smtp.Command) error { return s.handleNoop() },
-		smtp.CmdSTARTTLS: func(_ *smtp.Command) error { return s.handleStartTLS() },
-		smtp.CmdQUIT:     func(_ *smtp.Command) error { return s.handleQuit() },
-		smtp.CmdVRFY:     func(c *smtp.Command) error { return s.handleVrfy(c) },
-	}
+// commandDispatch maps SMTP command verbs to their session handlers. It is built
+// once at package scope rather than per command. Handlers that ignore the command
+// argument are wrapped; the rest use method expressions directly.
+var commandDispatch = map[string]func(*Session, *smtp.Command) error{
+	smtp.CmdHELO:     (*Session).handleHelo,
+	smtp.CmdEHLO:     (*Session).handleHelo,
+	smtp.CmdAUTH:     (*Session).handleAuth,
+	smtp.CmdMAIL:     (*Session).handleMail,
+	smtp.CmdRCPT:     (*Session).handleRcpt,
+	smtp.CmdDATA:     func(s *Session, _ *smtp.Command) error { return s.handleData() },
+	smtp.CmdBDAT:     (*Session).handleBdat,
+	smtp.CmdRSET:     func(s *Session, _ *smtp.Command) error { return s.handleRset() },
+	smtp.CmdNOOP:     func(s *Session, _ *smtp.Command) error { return s.handleNoop() },
+	smtp.CmdSTARTTLS: func(s *Session, _ *smtp.Command) error { return s.handleStartTLS() },
+	smtp.CmdQUIT:     func(s *Session, _ *smtp.Command) error { return s.handleQuit() },
+	smtp.CmdVRFY:     (*Session).handleVrfy,
 }
 
 // flushAndReturn flushes any pending responses and returns the error
@@ -632,7 +631,7 @@ func (s *Session) handleAuth(cmd *smtp.Command) error {
 		return s.writeResponse("504 Authentication mechanism not supported")
 	}
 
-	username, err := handler.Authenticate(s.conn, append([]string{cmd.Name}, cmd.Args...))
+	username, err := handler.Authenticate(s.conn, s.connTP, append([]string{cmd.Name}, cmd.Args...))
 	if err != nil {
 		s.logger.LogAuthentication(mech, username, false)
 		return s.writeResponse("535 Authentication failed")
@@ -1027,7 +1026,9 @@ func (s *Session) upgradeToTLS(cert *tls.Certificate) error {
 	}
 
 	tlsConn := tls.Server(s.conn, tlsConfig)
-	if err := tlsConn.Handshake(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), tlsHandshakeTimeout)
+	defer cancel()
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		s.logger.LogTLSHandshake(false, "", "", err)
 		return fmt.Errorf("TLS handshake failed: %v", err)
 	}
@@ -1140,6 +1141,9 @@ func (s *Session) isResponse421(response string) bool {
 }
 
 func (s *Session) writeResponse(response string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
 	is421 := s.isResponse421(response)
 
 	// If pipelining mode is active, queue the response instead of sending immediately
@@ -1152,7 +1156,7 @@ func (s *Session) writeResponse(response string) error {
 	// If pipelining mode is active and we have a 421, flush queued responses,
 	// send the 421, close the connection and signal EOF to stop the session.
 	if s.pipeliningMode && is421 {
-		if err := s.flushResponses(); err != nil {
+		if err := s.flushResponsesLocked(); err != nil {
 			return err
 		}
 		// Ensure response lines are properly terminated
@@ -1195,8 +1199,12 @@ func (s *Session) CloseWith421(ctx context.Context, reason string) error {
 	}
 	resp := fmt.Sprintf("%d %s", smtp.Code421, msg)
 
+	// Serialise with the command loop's own writes/queue access.
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
 	// Flush any queued responses first
-	if err := s.flushResponses(); err != nil {
+	if err := s.flushResponsesLocked(); err != nil {
 		s.logger.Debug("flushResponses failed during shutdown", logging.F("err", err))
 		// continue trying to notify client even if flushing fails
 	}
@@ -1264,7 +1272,9 @@ func (s *Session) breaksPipelining(cmdName string) bool {
 }
 
 // flushResponses sends all queued responses at once.
-func (s *Session) flushResponses() error {
+// flushResponsesLocked sends and clears the queued pipelined responses. The
+// caller must hold s.writeMu.
+func (s *Session) flushResponsesLocked() error {
 	if len(s.responseQueue) == 0 {
 		return nil
 	}
@@ -1279,6 +1289,14 @@ func (s *Session) flushResponses() error {
 	// Clear the queue
 	s.responseQueue = nil
 	return nil
+}
+
+// flushResponses acquires the write lock and flushes the queued responses. Used
+// by the command loop; callers already holding s.writeMu use flushResponsesLocked.
+func (s *Session) flushResponses() error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return s.flushResponsesLocked()
 }
 
 // getAuthMechanisms returns auth mechanisms string based on capability parts.
@@ -1326,14 +1344,14 @@ func (s *Session) WriteResponse(response string) error {
 }
 
 // GetMetadata returns session metadata set by extensions (implements SessionWriter)
-func (s *Session) GetMetadata() map[string]interface{} {
+func (s *Session) GetMetadata() map[string]any {
 	return s.metadata
 }
 
 // SetMetadata stores custom data in session metadata (implements SessionWriter)
-func (s *Session) SetMetadata(key string, value interface{}) {
+func (s *Session) SetMetadata(key string, value any) {
 	if s.metadata == nil {
-		s.metadata = make(map[string]interface{})
+		s.metadata = make(map[string]any)
 	}
 	s.metadata[key] = value
 }
@@ -1351,6 +1369,10 @@ const (
 	// maxWriteDeadline is the maximum write deadline used when trying to notify clients
 	// during shutdown; this bounds per-session write waits.
 	maxWriteDeadline = 5 * time.Second
+
+	// tlsHandshakeTimeout bounds the STARTTLS/implicit-TLS handshake so a slow or
+	// malicious client cannot stall the session indefinitely.
+	tlsHandshakeTimeout = 10 * time.Second
 
 	// MaxInterCommandDelay is the maximum allowed inter-command delay in seconds.
 	// The SMTP spec allows up to 10 minutes (600s); we clamp to 605s as a small buffer.
@@ -1375,7 +1397,7 @@ func (s *Session) formatErrorResult(err *smtp.ErrorResult) string {
 // handleBdat implements BDAT chunk handling for CHUNKING extension support.
 // BDAT <n> [LAST]
 func (s *Session) handleBdat(cmd *smtp.Command) error {
-	if !(s.state == smtp.StateRcpt || s.state == smtp.StateBdat) {
+	if s.state != smtp.StateRcpt && s.state != smtp.StateBdat {
 		return s.writeResponse("503 Bad sequence of commands")
 	}
 
@@ -1385,10 +1407,7 @@ func (s *Session) handleBdat(cmd *smtp.Command) error {
 		return s.writeResponse("501 Syntax error in parameters")
 	}
 
-	last := false
-	if len(cmd.Args) > 1 && strings.EqualFold(cmd.Args[1], "LAST") {
-		last = true
-	}
+	last := len(cmd.Args) > 1 && strings.EqualFold(cmd.Args[1], "LAST")
 
 	// Check for DATA error configured from MAIL FROM (only relevant on final chunk)
 	if s.dataErrorResult != nil && last {
@@ -1461,26 +1480,14 @@ func (s *Session) readBDATChunk(n int) ([]byte, error) {
 // part is expected to start with "dlay" followed by digits
 func parseDlayValue(part string) int {
 	// part is expected to start with "dlay" followed by digits
-	if !strings.HasPrefix(part, "dlay") {
-		return 0
-	}
-	numStr := strings.TrimPrefix(part, "dlay")
-	if numStr == "" {
+	numStr, ok := strings.CutPrefix(part, "dlay")
+	if !ok || numStr == "" {
 		return 0
 	}
 	v, err := strconv.Atoi(numStr)
 	if err != nil {
 		return 0
 	}
-	// Clamp to allowed range 0..MaxInterCommandDelay
-	if v < 0 {
-		return 0
-	}
-	if v > MaxInterCommandDelay {
-		return MaxInterCommandDelay
-	}
-	if v == 0 {
-		return 0
-	}
-	return v
+	// Clamp to the allowed range 0..MaxInterCommandDelay
+	return max(0, min(v, MaxInterCommandDelay))
 }

@@ -33,7 +33,9 @@ jobs:
       if: matrix.go-version == 'nightly'
       uses: actions/setup-go@v6
       with:
-        go-version: '1.25'
+        # Build Go tip with the current stable toolchain; bootstrapping tip now
+        # requires Go 1.26+, which the project's own 1.25 target cannot do.
+        go-version: 'stable'
 
     - name: Install gotip for nightly runs
       if: matrix.go-version == 'nightly'
@@ -131,7 +133,9 @@ jobs:
     - name: Gosec Security Checker
       uses: securego/gosec@v2.22.11
       with:
-        args: '-no-fail -fmt sarif -out results.sarif ./...'
+        # Exclude G401/G501 (MD5/SHA1): badsmtp intentionally implements CRAM-MD5
+        # (HMAC-MD5, RFC 2195), which is not a security weakness in this tool.
+        args: '-exclude=G401,G501 -no-fail -fmt sarif -out results.sarif ./...'
     
     - name: Upload SARIF file
       # Only attempt SARIF upload when running in a non-forked context. Uploading SARIF requires
@@ -258,11 +262,13 @@ jobs:
       with:
         go-version: '1.25'
 
+    # Use the official action, which installs a prebuilt golangci-lint binary.
+    # Installing via `go install` would require Go 1.26+ to compile v2.14.0,
+    # whereas this project builds with Go 1.25.
     - name: Run golangci-lint
-      run: |
-        chmod +x .github/install-tools.sh || true
-        .github/install-tools.sh
-        golangci-lint run --timeout=5m
+      uses: golangci/golangci-lint-action@v8
+      with:
+        version: v2.14.0
 
     - name: Run staticcheck
       run: |
@@ -293,7 +299,9 @@ jobs:
       if: matrix.go-version == 'nightly'
       uses: actions/setup-go@v6
       with:
-        go-version: '1.25'
+        # Build Go tip with the current stable toolchain; bootstrapping tip now
+        # requires Go 1.26+, which the project's own 1.25 target cannot do.
+        go-version: 'stable'
 
     - name: Install gotip for nightly runs
       if: matrix.go-version == 'nightly'

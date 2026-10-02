@@ -51,5 +51,24 @@ enable_hostname_routing: false
 # Default mailbox directory
 default_mailbox_dir: ""
 
-# Note: Logging configuration is loaded from environment variables (LOG_*)
-# See badsmtp.env.example for logging configuration options
+# Logging Configuration
+# All options can also be set via flags (--log-level, ...) or environment
+# variables (BADSMTP_LOG_LEVEL, ...). Flags override env, which overrides this file.
+
+# Log level: debug, info, warn, error (default: info)
+log_level: "info"
+
+# Log format: json or text (default: json)
+log_format: "json"
+
+# Log output: stdout, syslog, tcp, udp (default: stdout)
+log_output: "stdout"
+
+# Remote address (host:port) for tcp/udp output
+# log_remote_addr: "localhost:514"
+
+# Syslog facility: mail, daemon, local0-local7 (default: mail)
+# syslog_facility: "mail"
+
+# Include source file/line in log records (default: false)
+# log_trace: false

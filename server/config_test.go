@@ -160,6 +160,27 @@ func TestHasTLS(t *testing.T) {
 	}
 }
 
+func TestHasTLSCertFiles(t *testing.T) {
+	config := &Config{}
+
+	// No cert files configured -> fall back to self-signed
+	if config.HasTLSCertFiles() {
+		t.Error("Expected HasTLSCertFiles() to return false with no certificate files")
+	}
+
+	// Only one of the pair configured is not enough
+	config.TLSCertFile = "/path/to/cert.pem"
+	if config.HasTLSCertFiles() {
+		t.Error("Expected HasTLSCertFiles() to return false with only a cert file")
+	}
+
+	// Both cert and key configured
+	config.TLSKeyFile = "/path/to/key.pem"
+	if !config.HasTLSCertFiles() {
+		t.Error("Expected HasTLSCertFiles() to return true with cert and key files")
+	}
+}
+
 func TestConfigWithEnvironmentVariables(t *testing.T) {
 	// Set environment variables for testing
 	envVars := map[string]string{

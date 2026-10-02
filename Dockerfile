@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # BadSMTP Test Server Dockerfile
 
 # Build stage
@@ -10,7 +11,7 @@ WORKDIR /app
 
 # Copy go mod files
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 # Copy source code
 COPY . .
@@ -18,11 +19,14 @@ COPY . .
 # Note: Tests are run separately in CI pipeline
 # Skipping tests in Docker build to avoid build failures
 
-# Build the binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-s -w" -o badsmtp .
+# Build the binary. CGO_ENABLED=0 already yields a static binary, so the legacy
+# -a -installsuffix cgo flags are unnecessary. Cache the module and build caches.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o badsmtp .
 
 # Runtime stage
-FROM alpine:latest
+FROM alpine:3.21
 
 # Install ca-certificates for SSL/TLS and netcat for health checks
 RUN apk --no-cache add ca-certificates netcat-openbsd
@@ -62,14 +66,13 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Default command
 ENTRYPOINT ["./badsmtp"]
 
-# Labels for metadata
+# Labels for metadata (OCI image spec)
 ARG BUILD_DATE=unknown
 ARG VCS_REF=unknown
 
-LABEL org.label-schema.name="BadSMTP" \
-      org.label-schema.description="The Reliably Unreliable Mail Server" \
-      org.label-schema.version="1.0" \
-      org.label-schema.schema-version="1.0" \
-      org.label-schema.build-date="undefined" \
-      org.label-schema.vcs-url="https://github.com/BadSMTP/BadSMTP" \
-      org.label-schema.vcs-ref="undefined"
+LABEL org.opencontainers.image.title="BadSMTP" \
+      org.opencontainers.image.description="The Reliably Unreliable Mail Server" \
+      org.opencontainers.image.version="1.0" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.source="https://github.com/BadSMTP/BadSMTP" \
+      org.opencontainers.image.revision="${VCS_REF}"

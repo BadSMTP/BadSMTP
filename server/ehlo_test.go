@@ -199,8 +199,8 @@ func TestAuthMechanismKeywords(t *testing.T) {
 // This is just an example - real extensions would implement their own parsing logic.
 type testCapabilityParser struct{}
 
-func (p *testCapabilityParser) ParseCapabilities(_ string, parts []string) (modifiedParts []string, metadata map[string]interface{}) {
-	metadata = make(map[string]interface{})
+func (p *testCapabilityParser) ParseCapabilities(_ string, parts []string) (modifiedParts []string, metadata map[string]any) {
+	metadata = make(map[string]any)
 	modifiedParts = []string{}
 
 	// Example: Extract parts starting with "xtoken"
