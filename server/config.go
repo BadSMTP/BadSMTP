@@ -333,10 +333,17 @@ func (c *Config) GetMailboxDir(hostname string) string {
 	return c.MailboxDir
 }
 
-// HasTLS checks if TLS is enabled.
+// HasTLS reports whether the server offers TLS. It always does: a configured
+// certificate is used when available, otherwise a self-signed one is generated
+// on demand, so TLS ports and STARTTLS are always offered.
 func (c *Config) HasTLS() bool {
-	// TLS is available if certificate files are provided OR if we can generate self-signed certificates
-	return (c.TLSCertFile != "" && c.TLSKeyFile != "") || true
+	return true
+}
+
+// HasTLSCertFiles reports whether a real certificate/key pair has been
+// configured. When false the server falls back to self-signed certificates.
+func (c *Config) HasTLSCertFiles() bool {
+	return c.TLSCertFile != "" && c.TLSKeyFile != ""
 }
 
 // GetTLSHostname returns the hostname for TLS certificates.

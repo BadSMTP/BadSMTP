@@ -219,8 +219,9 @@ func (s *Server) createTLSListener(port int) (net.Listener, error) {
 				hostname = s.config.GetTLSHostname()
 			}
 
-			// Try to load certificate from files first
-			if s.config.HasTLS() {
+			// Use the configured certificate when real cert files are provided;
+			// only warn and fall back to self-signed if loading them fails.
+			if s.config.HasTLSCertFiles() {
 				if cert, err := tls.LoadX509KeyPair(s.config.TLSCertFile, s.config.TLSKeyFile); err == nil {
 					return &cert, nil
 				}
