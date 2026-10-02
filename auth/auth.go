@@ -4,6 +4,7 @@ package auth
 import (
 	"bufio"
 	"crypto/hmac"
+	"crypto/md5" //nolint:gosec // CRAM-MD5 is defined in terms of HMAC-MD5 (RFC 2195)
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -33,10 +34,9 @@ type PlainHandler struct{}
 type LoginHandler struct{}
 
 // CramHandler implements the CRAM-MD5 and CRAM-SHA256 authentication mechanisms.
-type CramHandler struct {
-	HashFunc func() hash.Hash
-	Name     string
-}
+// Both variants share the same handshake; the server extracts the username from
+// the client response without verifying the HMAC, so the handler is stateless.
+type CramHandler struct{}
 
 // XOAuth2Handler implements the XOAUTH2 authentication mechanism.
 type XOAuth2Handler struct{}
@@ -212,10 +212,8 @@ func NewHandler(mechanism string) Handler {
 		return &PlainHandler{}
 	case AuthMechanismLogin:
 		return &LoginHandler{}
-	case AuthMechanismCramMD5:
-		return &CramHandler{HashFunc: sha256.New, Name: AuthMechanismCramMD5}
-	case AuthMechanismCramSHA256:
-		return &CramHandler{HashFunc: sha256.New, Name: AuthMechanismCramSHA256}
+	case AuthMechanismCramMD5, AuthMechanismCramSHA256:
+		return &CramHandler{}
 	case AuthMechanismXOAuth2:
 		return &XOAuth2Handler{}
 	default:
@@ -228,21 +226,22 @@ func IsValidAuth(username string) bool {
 	return !strings.Contains(username, "badauth")
 }
 
-// GenerateCramResponse generates a CRAM-SHA256 response.
-// Helper functions for CRAM authentication
-func GenerateCramResponse(username, password, challenge string) string {
-	h := hmac.New(sha256.New, []byte(password))
+// cramResponse builds the CRAM client response ("username space hex-digest")
+// that a conforming client would send for the given HMAC hash function.
+func cramResponse(newHash func() hash.Hash, username, password, challenge string) string {
+	h := hmac.New(newHash, []byte(password))
 	h.Write([]byte(challenge))
-	hash := hex.EncodeToString(h.Sum(nil))
-	return username + " " + hash
+	return username + " " + hex.EncodeToString(h.Sum(nil))
 }
 
-// GenerateCramSHA256Response generates a CRAM-SHA256 response.
+// GenerateCramMD5Response generates a CRAM-MD5 (HMAC-MD5) client response.
+func GenerateCramMD5Response(username, password, challenge string) string {
+	return cramResponse(md5.New, username, password, challenge)
+}
+
+// GenerateCramSHA256Response generates a CRAM-SHA256 (HMAC-SHA256) client response.
 func GenerateCramSHA256Response(username, password, challenge string) string {
-	h := hmac.New(sha256.New, []byte(password))
-	h.Write([]byte(challenge))
-	hash := hex.EncodeToString(h.Sum(nil))
-	return username + " " + hash
+	return cramResponse(sha256.New, username, password, challenge)
 }
 
 // RedactAuthArgs returns a copy of args safe for logging by redacting any
