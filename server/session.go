@@ -69,9 +69,9 @@ type Capabilities struct {
 
 // Session represents a single SMTP client connection
 type Session struct {
-	conn          net.Conn
-	connReader    *bufio.Reader
-	connTP        *textproto.Reader
+	conn       net.Conn
+	connReader *bufio.Reader
+	connTP     *textproto.Reader
 	// writeMu serialises writes to conn and access to responseQueue. The command
 	// loop and the shutdown path (CloseWith421) run in separate goroutines, so
 	// they must not write to the connection or touch the queue concurrently.
@@ -1032,7 +1032,9 @@ func (s *Session) upgradeToTLS(cert *tls.Certificate) error {
 	}
 
 	tlsConn := tls.Server(s.conn, tlsConfig)
-	if err := tlsConn.Handshake(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), tlsHandshakeTimeout)
+	defer cancel()
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		s.logger.LogTLSHandshake(false, "", "", err)
 		return fmt.Errorf("TLS handshake failed: %v", err)
 	}
@@ -1374,6 +1376,10 @@ const (
 	// during shutdown; this bounds per-session write waits.
 	maxWriteDeadline = 5 * time.Second
 
+	// tlsHandshakeTimeout bounds the STARTTLS/implicit-TLS handshake so a slow or
+	// malicious client cannot stall the session indefinitely.
+	tlsHandshakeTimeout = 10 * time.Second
+
 	// MaxInterCommandDelay is the maximum allowed inter-command delay in seconds.
 	// The SMTP spec allows up to 10 minutes (600s); we clamp to 605s as a small buffer.
 	MaxInterCommandDelay = 605
@@ -1397,7 +1403,7 @@ func (s *Session) formatErrorResult(err *smtp.ErrorResult) string {
 // handleBdat implements BDAT chunk handling for CHUNKING extension support.
 // BDAT <n> [LAST]
 func (s *Session) handleBdat(cmd *smtp.Command) error {
-	if !(s.state == smtp.StateRcpt || s.state == smtp.StateBdat) {
+	if s.state != smtp.StateRcpt && s.state != smtp.StateBdat {
 		return s.writeResponse("503 Bad sequence of commands")
 	}
 
@@ -1407,10 +1413,7 @@ func (s *Session) handleBdat(cmd *smtp.Command) error {
 		return s.writeResponse("501 Syntax error in parameters")
 	}
 
-	last := false
-	if len(cmd.Args) > 1 && strings.EqualFold(cmd.Args[1], "LAST") {
-		last = true
-	}
+	last := len(cmd.Args) > 1 && strings.EqualFold(cmd.Args[1], "LAST")
 
 	// Check for DATA error configured from MAIL FROM (only relevant on final chunk)
 	if s.dataErrorResult != nil && last {
