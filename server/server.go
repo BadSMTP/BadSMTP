@@ -463,9 +463,13 @@ func (s *Server) closeAllListeners() {
 // to terminate with a 421 and wait up to the provided context for them to finish.
 func (s *Server) Shutdown(ctx context.Context) error {
 	if !atomic.CompareAndSwapInt32(&s.shuttingDown, 0, 1) {
-		// already shutting down
+		// already shutting down; the goroutine that won the CAS owns closing s.done
 		return nil
 	}
+
+	// Signal Start to return once shutdown finishes, on every path below. The CAS
+	// above guarantees only one goroutine reaches here, so this closes exactly once.
+	defer close(s.done)
 
 	// Stop accepting new connections
 	s.closeAllListeners()
