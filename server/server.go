@@ -31,6 +31,9 @@ const (
 
 	// DefaultShutdownTimeout is the graceful shutdown timeout used by the server
 	DefaultShutdownTimeout = 10 * time.Second
+
+	// dnsLookupTimeout bounds reverse DNS lookups used for hostname detection
+	dnsLookupTimeout = 2 * time.Second
 )
 
 // Server represents an SMTP test server instance
@@ -154,7 +157,8 @@ func (s *Server) Start() error {
 
 func (s *Server) startPortListener(port int, description string) {
 	addr := net.JoinHostPort(s.config.ListenAddress, fmt.Sprintf("%d", port))
-	listener, err := net.Listen("tcp", addr)
+	var lc net.ListenConfig
+	listener, err := lc.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		// If the port is already in use, log a warning and skip starting this listener.
 		var warnErr bool
@@ -360,8 +364,11 @@ func (s *Server) extractHostname(conn net.Conn) string {
 	// This works when using different hostnames that resolve to the same IP
 	localAddr := conn.LocalAddr()
 	if tcpAddr, ok := localAddr.(*net.TCPAddr); ok {
-		// Try to do a reverse DNS lookup to get the hostname
-		if names, err := net.LookupAddr(tcpAddr.IP.String()); err == nil && len(names) > 0 {
+		// Try to do a reverse DNS lookup to get the hostname, bounded by a timeout
+		ctx, cancel := context.WithTimeout(context.Background(), dnsLookupTimeout)
+		defer cancel()
+		var resolver net.Resolver
+		if names, err := resolver.LookupAddr(ctx, tcpAddr.IP.String()); err == nil && len(names) > 0 {
 			// Return the first hostname found
 			hostname := names[0]
 			// Remove trailing dot if present

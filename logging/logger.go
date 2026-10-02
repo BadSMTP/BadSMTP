@@ -2,6 +2,7 @@
 package logging
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,9 @@ import (
 	"strings"
 	"time"
 )
+
+// remoteDialTimeout bounds how long a remote log connection attempt may take.
+const remoteDialTimeout = 2 * time.Second
 
 // LogLevel represents the logging level
 type LogLevel int
@@ -323,7 +327,8 @@ func (l *remoteLogger) sendLog(data []byte) {
 		return
 	}
 
-	conn, err := net.Dial(l.protocol, l.addr)
+	dialer := net.Dialer{Timeout: remoteDialTimeout}
+	conn, err := dialer.DialContext(context.Background(), l.protocol, l.addr)
 	if err != nil {
 		// Fallback to stdout if remote logging fails
 		if _, werr := os.Stdout.Write(data); werr != nil {
