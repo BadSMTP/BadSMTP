@@ -149,6 +149,15 @@ func RegisterFlags() {
 	pf.Int("tls-port", server.DefaultTLSPort, "Port for implicit TLS (SMTPS)")
 	pf.Int("starttls-port", server.DefaultSTARTTLSPort, "Port for STARTTLS")
 	pf.String("tls-hostname", server.DefaultTLSHostname, "Hostname for TLS certificate")
+
+	// Logging configuration (empty defaults so unset flags fall back to config
+	// file/env values and finally the built-in logging defaults)
+	pf.String("log-level", "", "Log level: debug, info, warn, error (default: info)")
+	pf.String("log-format", "", "Log format: json or text (default: json)")
+	pf.String("log-output", "", "Log output: stdout, syslog, tcp, udp (default: stdout)")
+	pf.String("log-remote-addr", "", "Remote address (host:port) for tcp/udp log output")
+	pf.String("syslog-facility", "", "Syslog facility: mail, daemon, local0-local7 (default: mail)")
+	pf.Bool("log-trace", false, "Include source file and line in log records")
 }
 
 // Execute sets the version and runs the root command.

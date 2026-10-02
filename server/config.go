@@ -217,7 +217,16 @@ type Config struct {
 	CapabilityParser CapabilityParser `mapstructure:"-"` // EHLO hostname capability parsing (default: pass-through)
 	SMTPExtensions   []SMTPExtension  `mapstructure:"-"` // Custom SMTP commands and capabilities (default: empty slice)
 
-	// Logging configuration
+	// Logging configuration. These raw fields are populated from flags, env and
+	// config files, then assembled into LogConfig by EnsureDefaults.
+	LogLevel       string `mapstructure:"log_level"`       // debug, info, warn, error
+	LogFormat      string `mapstructure:"log_format"`      // json or text
+	LogOutput      string `mapstructure:"log_output"`      // stdout, syslog, tcp, udp
+	LogRemoteAddr  string `mapstructure:"log_remote_addr"` // host:port for tcp/udp output
+	SyslogFacility string `mapstructure:"syslog_facility"` // mail, daemon, local0-local7
+	LogTrace       bool   `mapstructure:"log_trace"`       // include source file/line
+
+	// LogConfig is assembled from the fields above, or may be set directly by callers.
 	LogConfig logging.LogConfig `mapstructure:"-"`
 }
 
@@ -226,7 +235,35 @@ type Config struct {
 func (c *Config) EnsureDefaults() {
 	c.ensureScalarDefaults()
 	c.ensureMapDefaults()
+	c.ensureLogConfig()
 	c.ensureExtensionDefaults()
+}
+
+// ensureLogConfig assembles LogConfig from the raw logging fields, starting from
+// the package defaults and overriding with any values that were provided. If a
+// caller set LogConfig directly it is left untouched.
+func (c *Config) ensureLogConfig() {
+	if c.LogConfig != (logging.LogConfig{}) {
+		return
+	}
+	cfg := logging.DefaultConfig()
+	if c.LogLevel != "" {
+		cfg.Level = logging.ParseLogLevel(c.LogLevel)
+	}
+	if c.LogFormat != "" {
+		cfg.Format = c.LogFormat
+	}
+	if c.LogOutput != "" {
+		cfg.Output = c.LogOutput
+	}
+	if c.LogRemoteAddr != "" {
+		cfg.RemoteAddr = c.LogRemoteAddr
+	}
+	if c.SyslogFacility != "" {
+		cfg.SyslogFacility = c.SyslogFacility
+	}
+	cfg.IncludeTrace = c.LogTrace
+	c.LogConfig = cfg
 }
 
 func (c *Config) ensureScalarDefaults() {
