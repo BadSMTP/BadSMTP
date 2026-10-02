@@ -3,7 +3,7 @@ package auth
 
 import (
 	"crypto/hmac"
-	"crypto/md5" //nolint:gosec // CRAM-MD5 is defined in terms of HMAC-MD5 (RFC 2195)
+	"crypto/md5" //nolint:gosec // #nosec G501 -- CRAM-MD5 is defined in terms of HMAC-MD5 (RFC 2195)
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -233,7 +233,7 @@ func cramResponse(newHash func() hash.Hash, username, password, challenge string
 
 // GenerateCramMD5Response generates a CRAM-MD5 (HMAC-MD5) client response.
 func GenerateCramMD5Response(username, password, challenge string) string {
-	return cramResponse(md5.New, username, password, challenge)
+	return cramResponse(md5.New, username, password, challenge) // #nosec G401 -- HMAC-MD5 for CRAM-MD5 (RFC 2195)
 }
 
 // GenerateCramSHA256Response generates a CRAM-SHA256 (HMAC-SHA256) client response.
