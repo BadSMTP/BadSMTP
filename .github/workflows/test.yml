@@ -33,7 +33,9 @@ jobs:
       if: matrix.go-version == 'nightly'
       uses: actions/setup-go@v6
       with:
-        go-version: '1.25'
+        # Build Go tip with the current stable toolchain; bootstrapping tip now
+        # requires Go 1.26+, which the project's own 1.25 target cannot do.
+        go-version: 'stable'
 
     - name: Install gotip for nightly runs
       if: matrix.go-version == 'nightly'
@@ -297,7 +299,9 @@ jobs:
       if: matrix.go-version == 'nightly'
       uses: actions/setup-go@v6
       with:
-        go-version: '1.25'
+        # Build Go tip with the current stable toolchain; bootstrapping tip now
+        # requires Go 1.26+, which the project's own 1.25 target cannot do.
+        go-version: 'stable'
 
     - name: Install gotip for nightly runs
       if: matrix.go-version == 'nightly'
