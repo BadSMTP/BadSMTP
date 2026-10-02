@@ -290,14 +290,16 @@ func (m *Mailbox) Clear() error {
 	}
 
 	count := 0
+	var errs []error
 	for _, file := range files {
 		if err := os.Remove(file); err != nil {
 			stdLogger.Error("Failed to delete message", fmt.Errorf("%s: %v", file, err))
+			errs = append(errs, fmt.Errorf("remove %s: %w", file, err))
 		} else {
 			count++
 		}
 	}
 
 	stdLogger.Info("Cleared messages from mailbox", logging.F("count", count))
-	return nil
+	return errors.Join(errs...)
 }
