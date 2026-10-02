@@ -8,11 +8,11 @@ import (
 
 	"badsmtp/server"
 
-	"github.com/knadh/koanf"
 	kyaml "github.com/knadh/koanf/parsers/yaml"
 	kenv "github.com/knadh/koanf/providers/env"
 	kfile "github.com/knadh/koanf/providers/file"
 	kposflag "github.com/knadh/koanf/providers/posflag"
+	"github.com/knadh/koanf/v2"
 	"github.com/spf13/cobra"
 )
 
