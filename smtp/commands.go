@@ -42,80 +42,65 @@ func ParseCommand(line string) (*Command, error) {
 	}, nil
 }
 
+// validCommands is the set of recognised SMTP command verbs.
+var validCommands = map[string]struct{}{
+	CmdHELO: {}, CmdEHLO: {}, CmdAUTH: {}, CmdMAIL: {}, CmdRCPT: {}, CmdDATA: {},
+	CmdBDAT: {}, CmdRSET: {}, CmdNOOP: {}, CmdQUIT: {}, CmdSTARTTLS: {}, CmdVRFY: {},
+}
+
 // IsValid checks if the command is valid.
 func (c *Command) IsValid() bool {
-	validCommands := map[string]bool{
-		CmdHELO:     true,
-		CmdEHLO:     true,
-		CmdAUTH:     true,
-		CmdMAIL:     true,
-		CmdRCPT:     true,
-		CmdDATA:     true,
-		CmdBDAT:     true,
-		CmdRSET:     true,
-		CmdNOOP:     true,
-		CmdQUIT:     true,
-		CmdSTARTTLS: true,
-		CmdVRFY:     true,
-	}
+	_, ok := validCommands[c.Name]
+	return ok
+}
 
-	return validCommands[c.Name]
+// errSyntax is the canonical "501" reply used by the argument validators.
+func errSyntax() error {
+	return fmt.Errorf("501 Syntax error in parameters")
+}
+
+// requireArg validates that the command has at least one argument.
+func requireArg(c *Command) error {
+	if len(c.Args) < 1 {
+		return errSyntax()
+	}
+	return nil
+}
+
+// argValidators holds the per-command argument validators, built once.
+var argValidators = map[string]func(*Command) error{
+	CmdHELO: requireArg,
+	CmdEHLO: requireArg,
+	CmdAUTH: requireArg,
+	CmdVRFY: requireArg, // VRFY accepts a single mailbox specification
+	CmdMAIL: func(c *Command) error {
+		if len(c.Args) < 1 || !strings.HasPrefix(strings.ToUpper(c.Args[0]), "FROM:") {
+			return errSyntax()
+		}
+		return nil
+	},
+	CmdRCPT: func(c *Command) error {
+		if len(c.Args) < 1 || !strings.HasPrefix(strings.ToUpper(c.Args[0]), "TO:") {
+			return errSyntax()
+		}
+		return nil
+	},
+	CmdBDAT: func(c *Command) error {
+		if len(c.Args) < 1 {
+			return errSyntax()
+		}
+		// Optional second argument should be "LAST" if present
+		if len(c.Args) > 1 && !strings.EqualFold(c.Args[1], "LAST") {
+			return errSyntax()
+		}
+		return nil
+	},
 }
 
 // ValidateArgs checks the number of arguments are correct for the given command.
 func (c *Command) ValidateArgs() error {
-	validators := map[string]func() error{
-		CmdHELO: func() error {
-			if len(c.Args) < 1 {
-				return fmt.Errorf("501 Syntax error in parameters")
-			}
-			return nil
-		},
-		CmdEHLO: func() error {
-			if len(c.Args) < 1 {
-				return fmt.Errorf("501 Syntax error in parameters")
-			}
-			return nil
-		},
-		CmdAUTH: func() error {
-			if len(c.Args) < 1 {
-				return fmt.Errorf("501 Syntax error in parameters")
-			}
-			return nil
-		},
-		CmdMAIL: func() error {
-			if len(c.Args) < 1 || !strings.HasPrefix(strings.ToUpper(c.Args[0]), "FROM:") {
-				return fmt.Errorf("501 Syntax error in parameters")
-			}
-			return nil
-		},
-		CmdRCPT: func() error {
-			if len(c.Args) < 1 || !strings.HasPrefix(strings.ToUpper(c.Args[0]), "TO:") {
-				return fmt.Errorf("501 Syntax error in parameters")
-			}
-			return nil
-		},
-		CmdBDAT: func() error {
-			if len(c.Args) < 1 {
-				return fmt.Errorf("501 Syntax error in parameters")
-			}
-			// Optional second argument should be "LAST" if present
-			if len(c.Args) > 1 && !strings.EqualFold(c.Args[1], "LAST") {
-				return fmt.Errorf("501 Syntax error in parameters")
-			}
-			return nil
-		},
-		CmdVRFY: func() error {
-			// VRFY accepts a single mailbox specification; allow multiple args and join them
-			if len(c.Args) < 1 {
-				return fmt.Errorf("501 Syntax error in parameters")
-			}
-			return nil
-		},
-	}
-
-	if v, ok := validators[c.Name]; ok {
-		return v()
+	if v, ok := argValidators[c.Name]; ok {
+		return v(c)
 	}
 	return nil
 }
@@ -210,36 +195,36 @@ func ValidateEmailAddress(email string) bool {
 	return ValidateDomain(domain)
 }
 
-// IsAllowedInState checks if a command is allowed in the specified SMTP state.
-// This implements RFC 5321 command sequencing rules.
-func (c *Command) IsAllowedInState(state State) bool {
-	// Map of allowed states for each command
-	allowed := map[string]map[State]bool{
-		CmdHELO:     {StateHelo: true, StateMail: true},
-		CmdEHLO:     {StateHelo: true, StateMail: true},
-		CmdAUTH:     {StateMail: true, StateAuth: true},
-		CmdMAIL:     {StateMail: true},
-		CmdRCPT:     {StateRcpt: true},
-		CmdDATA:     {StateRcpt: true},
-		CmdBDAT:     {StateRcpt: true, StateBdat: true},
-		CmdRSET:     {StateHelo: true, StateMail: true, StateRcpt: true, StateAuth: true},
-		CmdNOOP:     {StateHelo: true, StateMail: true, StateRcpt: true, StateData: true, StateBdat: true, StateAuth: true},
-		CmdQUIT:     {StateHelo: true, StateMail: true, StateRcpt: true, StateData: true, StateBdat: true, StateAuth: true},
-		CmdSTARTTLS: {StateHelo: true, StateMail: true},
-		// VRFY may be issued at any time and does not affect session state
-		CmdVRFY: {
-			StateGreeting: true,
-			StateHelo:     true,
-			StateAuth:     true,
-			StateMail:     true,
-			StateRcpt:     true,
-			StateData:     true,
-			StateBdat:     true,
-			StateQuit:     true,
-		},
-	}
+// allowedStates maps each command to the set of states in which it is permitted,
+// implementing RFC 5321 command sequencing rules. Built once at package scope.
+var allowedStates = map[string]map[State]bool{
+	CmdHELO:     {StateHelo: true, StateMail: true},
+	CmdEHLO:     {StateHelo: true, StateMail: true},
+	CmdAUTH:     {StateMail: true, StateAuth: true},
+	CmdMAIL:     {StateMail: true},
+	CmdRCPT:     {StateRcpt: true},
+	CmdDATA:     {StateRcpt: true},
+	CmdBDAT:     {StateRcpt: true, StateBdat: true},
+	CmdRSET:     {StateHelo: true, StateMail: true, StateRcpt: true, StateAuth: true},
+	CmdNOOP:     {StateHelo: true, StateMail: true, StateRcpt: true, StateData: true, StateBdat: true, StateAuth: true},
+	CmdQUIT:     {StateHelo: true, StateMail: true, StateRcpt: true, StateData: true, StateBdat: true, StateAuth: true},
+	CmdSTARTTLS: {StateHelo: true, StateMail: true},
+	// VRFY may be issued at any time and does not affect session state
+	CmdVRFY: {
+		StateGreeting: true,
+		StateHelo:     true,
+		StateAuth:     true,
+		StateMail:     true,
+		StateRcpt:     true,
+		StateData:     true,
+		StateBdat:     true,
+		StateQuit:     true,
+	},
+}
 
-	if m, ok := allowed[c.Name]; ok {
+// IsAllowedInState checks if a command is allowed in the specified SMTP state.
+func (c *Command) IsAllowedInState(state State) bool {
+	if m, ok := allowedStates[c.Name]; ok {
 		return m[state]
 	}
 	return false

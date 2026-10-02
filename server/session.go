@@ -272,10 +272,9 @@ func (s *Session) handleCommand(line string) error {
 		s.pipeliningMode = false
 	}
 
-	handlers := s.commandHandlers()
 	var cmdErr error
-	if h, ok := handlers[cmd.Name]; ok {
-		cmdErr = h(cmd)
+	if h, ok := commandDispatch[cmd.Name]; ok {
+		cmdErr = h(s, cmd)
 	} else {
 		// Try custom SMTP extensions
 		handled, err := s.tryExtensionHandlers(cmd)
@@ -404,22 +403,22 @@ func (s *Session) parseAndLogCommand(line string) (*smtp.Command, []string, erro
 	return cmd, loggedArgs, nil
 }
 
-// commandHandlers returns the dispatch map for SMTP commands.
-func (s *Session) commandHandlers() map[string]func(*smtp.Command) error {
-	return map[string]func(*smtp.Command) error{
-		smtp.CmdHELO:     func(c *smtp.Command) error { return s.handleHelo(c) },
-		smtp.CmdEHLO:     func(c *smtp.Command) error { return s.handleHelo(c) },
-		smtp.CmdAUTH:     func(c *smtp.Command) error { return s.handleAuth(c) },
-		smtp.CmdMAIL:     func(c *smtp.Command) error { return s.handleMail(c) },
-		smtp.CmdRCPT:     func(c *smtp.Command) error { return s.handleRcpt(c) },
-		smtp.CmdDATA:     func(_ *smtp.Command) error { return s.handleData() },
-		smtp.CmdBDAT:     func(c *smtp.Command) error { return s.handleBdat(c) },
-		smtp.CmdRSET:     func(_ *smtp.Command) error { return s.handleRset() },
-		smtp.CmdNOOP:     func(_ *smtp.Command) error { return s.handleNoop() },
-		smtp.CmdSTARTTLS: func(_ *smtp.Command) error { return s.handleStartTLS() },
-		smtp.CmdQUIT:     func(_ *smtp.Command) error { return s.handleQuit() },
-		smtp.CmdVRFY:     func(c *smtp.Command) error { return s.handleVrfy(c) },
-	}
+// commandDispatch maps SMTP command verbs to their session handlers. It is built
+// once at package scope rather than per command. Handlers that ignore the command
+// argument are wrapped; the rest use method expressions directly.
+var commandDispatch = map[string]func(*Session, *smtp.Command) error{
+	smtp.CmdHELO:     (*Session).handleHelo,
+	smtp.CmdEHLO:     (*Session).handleHelo,
+	smtp.CmdAUTH:     (*Session).handleAuth,
+	smtp.CmdMAIL:     (*Session).handleMail,
+	smtp.CmdRCPT:     (*Session).handleRcpt,
+	smtp.CmdDATA:     func(s *Session, _ *smtp.Command) error { return s.handleData() },
+	smtp.CmdBDAT:     (*Session).handleBdat,
+	smtp.CmdRSET:     func(s *Session, _ *smtp.Command) error { return s.handleRset() },
+	smtp.CmdNOOP:     func(s *Session, _ *smtp.Command) error { return s.handleNoop() },
+	smtp.CmdSTARTTLS: func(s *Session, _ *smtp.Command) error { return s.handleStartTLS() },
+	smtp.CmdQUIT:     func(s *Session, _ *smtp.Command) error { return s.handleQuit() },
+	smtp.CmdVRFY:     (*Session).handleVrfy,
 }
 
 // flushAndReturn flushes any pending responses and returns the error
