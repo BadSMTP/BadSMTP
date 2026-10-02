@@ -64,12 +64,13 @@ jobs:
       with:
         go-version: '1.25'
 
+    # Use the official action, which installs a prebuilt golangci-lint binary.
+    # Installing via `go install` would require Go 1.26+ to compile v2.14.0,
+    # whereas this project builds with Go 1.25.
     - name: Run golangci-lint
-      run: |
-        # Ensure install script is executable and run it to install pinned tools
-        chmod +x .github/install-tools.sh || true
-        .github/install-tools.sh
-        golangci-lint run --timeout=5m
+      uses: golangci/golangci-lint-action@v8
+      with:
+        version: v2.14.0
 
   build:
     name: Build
