@@ -19,6 +19,11 @@ const (
 	MailboxDirPermissions = 0750
 	// MaildirFilePermissions holds the permissions used for maildir message files
 	MaildirFilePermissions = 0600
+
+	// Maildir subdirectory names.
+	maildirNew = "new"
+	maildirCur = "cur"
+	maildirTmp = "tmp"
 )
 
 var messageCounter atomic.Int64
@@ -99,7 +104,7 @@ func NewMailbox(directory string) (*Mailbox, error) {
 	}
 
 	// Create Maildir subdirectories
-	subdirs := []string{"new", "cur", "tmp"}
+	subdirs := []string{maildirNew, maildirCur, maildirTmp}
 	for _, subdir := range subdirs {
 		path := filepath.Join(directory, subdir)
 		if err := os.MkdirAll(path, MailboxDirPermissions); err != nil {
@@ -125,7 +130,7 @@ func (m *Mailbox) SaveMessage(msg *Message) error {
 	now := time.Now()
 
 	// Prepare tmp directory path
-	tmpDir := filepath.Join(m.Directory, "tmp")
+	tmpDir := filepath.Join(m.Directory, maildirTmp)
 
 	// Ensure tmpDir exists (should already, but be defensive)
 	if err := os.MkdirAll(tmpDir, MailboxDirPermissions); err != nil {
@@ -180,7 +185,7 @@ func (m *Mailbox) SaveMessage(msg *Message) error {
 
 	// Atomically move from tmp/ to new/ (Maildir delivery)
 	filename := generateMailFilename(now, &messageCounter, m.hostname)
-	newPath := filepath.Join(m.Directory, "new", filename)
+	newPath := filepath.Join(m.Directory, maildirNew, filename)
 	if err := os.Rename(tmpPath, newPath); err != nil {
 		if rmErr := os.Remove(tmpPath); rmErr != nil {
 			stdLogger.Error("Failed to remove temp file after rename failure", fmt.Errorf("%s: %v", tmpPath, rmErr))
@@ -245,7 +250,7 @@ func (m *Mailbox) ListMessages() ([]string, error) {
 	var allFiles []string
 
 	// List messages in new/ and cur/ directories
-	for _, subdir := range []string{"new", "cur"} {
+	for _, subdir := range []string{maildirNew, maildirCur} {
 		pattern := filepath.Join(m.Directory, subdir, "*")
 		files, err := filepath.Glob(pattern)
 		if err != nil {
@@ -261,7 +266,7 @@ func (m *Mailbox) ListMessages() ([]string, error) {
 // Filename should be just the basename, not a full path.
 func (m *Mailbox) DeleteMessage(filename string) error {
 	// Try both new/ and cur/ directories
-	for _, subdir := range []string{"new", "cur"} {
+	for _, subdir := range []string{maildirNew, maildirCur} {
 		fullPath := filepath.Join(m.Directory, subdir, filename)
 
 		// Security: Validate that the path is within the mailbox directory (prevent path traversal)

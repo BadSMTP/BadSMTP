@@ -354,6 +354,10 @@ func (c *Config) GetTLSHostname() string {
 	return DefaultTLSHostname
 }
 
+// selfSignedCertField is the placeholder value used for the subject fields of
+// generated self-signed certificates.
+const selfSignedCertField = "Test"
+
 // GenerateSelfSignedCert generates a self-signed certificate for the given hostname.
 func (c *Config) GenerateSelfSignedCert(hostname string) (tls.Certificate, error) {
 	// Generate private key (ECDSA P-256)
@@ -369,9 +373,9 @@ func (c *Config) GenerateSelfSignedCert(hostname string) (tls.Certificate, error
 			//nolint:misspell // 'Organization' is the stdlib field name
 			Organization:       []string{"BadSMTP Test Server"},
 			Country:            []string{"US"},
-			Province:           []string{"Test"},
-			Locality:           []string{"Test"},
-			OrganizationalUnit: []string{"Test"},
+			Province:           []string{selfSignedCertField},
+			Locality:           []string{selfSignedCertField},
+			OrganizationalUnit: []string{selfSignedCertField},
 			CommonName:         hostname,
 		},
 		NotBefore:             time.Now(),
