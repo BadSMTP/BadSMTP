@@ -131,7 +131,9 @@ jobs:
     - name: Gosec Security Checker
       uses: securego/gosec@v2.22.11
       with:
-        args: '-no-fail -fmt sarif -out results.sarif ./...'
+        # Exclude G401/G501 (MD5/SHA1): badsmtp intentionally implements CRAM-MD5
+        # (HMAC-MD5, RFC 2195), which is not a security weakness in this tool.
+        args: '-exclude=G401,G501 -no-fail -fmt sarif -out results.sarif ./...'
     
     - name: Upload SARIF file
       # Only attempt SARIF upload when running in a non-forked context. Uploading SARIF requires
