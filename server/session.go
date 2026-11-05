@@ -67,6 +67,7 @@ type Capabilities struct {
 	Chunking            bool // CHUNKING - supports BDAT command
 	STARTTLS            bool // STARTTLS - TLS upgrade available
 	EightBitMIME        bool // 8BITMIME - 8-bit MIME support
+	XCLIENT             bool // XCLIENT - client attribute overrides (Postfix XCLIENT)
 }
 
 // Session represents a single SMTP client connection
@@ -94,6 +95,18 @@ type Session struct {
 
 	// Per-session command delay in seconds (set by EHLO dlay<N>)
 	commandDelay int
+
+	// XCLIENT overrides (Postfix XCLIENT extension). Empty strings mean
+	// "not overridden"; sentinel-handled values fall back to the real
+	// connection attributes.
+	xclientName     string
+	xclientAddr     string
+	xclientPort     int
+	xclientProto    string
+	xclientHelo     string
+	xclientLogin    string
+	xclientDestAddr string
+	xclientDestPort int
 
 	// Pipelining support
 	responseQueue  []string // Buffer for pipelined responses
@@ -420,6 +433,7 @@ var commandDispatch = map[string]func(*Session, *smtp.Command) error{
 	smtp.CmdSTARTTLS: func(s *Session, _ *smtp.Command) error { return s.handleStartTLS() },
 	smtp.CmdQUIT:     func(s *Session, _ *smtp.Command) error { return s.handleQuit() },
 	smtp.CmdVRFY:     (*Session).handleVrfy,
+	smtp.CmdXCLIENT:  (*Session).handleXclient,
 }
 
 // flushAndReturn flushes any pending responses and returns the error
@@ -577,6 +591,12 @@ func (s *Session) addStandardCapabilities(response *[]string, parts []string) {
 	if s.capabilities.EnhancedStatusCodes {
 		*response = append(*response, fmt.Sprintf("%d-ENHANCEDSTATUSCODES", smtp.Code250))
 	}
+
+	// XCLIENT - enabled by default unless disabled via config
+	s.capabilities.XCLIENT = !s.config.DisableXclient
+	if s.capabilities.XCLIENT {
+		*response = append(*response, fmt.Sprintf("%d-XCLIENT %s", smtp.Code250, xclientAdvertisedAttrs))
+	}
 }
 
 // addExtensionCapabilities adds custom SMTP extension capabilities to the EHLO response.
@@ -639,8 +659,15 @@ func (s *Session) handleAuth(cmd *smtp.Command) error {
 		return s.writeResponse("535 Authentication failed")
 	}
 
+	// An XCLIENT LOGIN override drives the auth outcome like an
+	// authenticated username (goodauth/badauth patterns).
+	authUsername := username
+	if s.xclientLogin != "" {
+		authUsername = s.xclientLogin
+	}
+
 	// Use the extension Authenticator interface for validation
-	user, err := s.config.Authenticator.Authenticate(username, "")
+	user, err := s.config.Authenticator.Authenticate(authUsername, "")
 	if err != nil {
 		s.logger.LogAuthentication(mech, username, false)
 		return s.writeResponse("535 Authentication failed")
@@ -885,7 +912,7 @@ func (s *Session) storeMessage(content string) error {
 		Content:   content,
 		Headers:   headers,
 		Size:      len(content),
-		ClientIP:  s.logger.GetClientIP(),
+		ClientIP:  s.effectiveClientIP(),
 		Hostname:  s.hostname,
 		TLSUsed:   s.tlsState != nil,
 		Timestamp: time.Now().Format(time.RFC3339),
@@ -1270,6 +1297,12 @@ func (s *Session) breaksPipelining(cmdName string) bool {
 		return true
 	case smtp.CmdQUIT:
 		// QUIT terminates the connection
+		return true
+	case smtp.CmdXCLIENT:
+		// XCLIENT resets the session to the greeting protocol stage and
+		// may re-trigger drop/delay behaviours, so it must not be served
+		// from a pipelined batch; flush first (Postfix: send at end of a
+		// command group).
 		return true
 	default:
 		return false

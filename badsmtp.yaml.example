@@ -48,6 +48,10 @@ tls_hostname: "badsmtp.test"
 # Enable routing messages to different mailbox directories based on RCPT TO hostname
 enable_hostname_routing: false
 
+# XCLIENT extension (default: enabled)
+# When disabled, the XCLIENT command is rejected with 502 and not advertised in EHLO
+disable_xclient: false
+
 # Default mailbox directory
 default_mailbox_dir: ""
 

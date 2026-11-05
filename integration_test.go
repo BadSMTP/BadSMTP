@@ -174,6 +174,11 @@ func TestSMTPIntegration(t *testing.T) {
 		testNOOPCommand(t, port)
 	})
 
+	// Test XCLIENT extension (Postfix XCLIENT)
+	t.Run("XCLIENT", func(t *testing.T) {
+		testXclient(t, port)
+	})
+
 	// Stop server
 	listener.Close()
 	wg.Wait()
@@ -638,6 +643,49 @@ func testNOOPCommand(t *testing.T, port int) {
 	}
 
 	// Send QUIT
+	writeLine(t, writer, "QUIT")
+	readLine(t, reader)
+}
+
+// testXclient verifies the XCLIENT extension over a real connection:
+// EHLO advertises XCLIENT, XCLIENT applies overrides and resets to the
+// greeting stage (220), and the session works normally afterwards.
+func testXclient(t *testing.T, port int) {
+	conn, reader, writer := setupSMTPConnection(t, port)
+	defer conn.Close()
+
+	// XCLIENT with NAME and ADDR overrides: expect 220 (greeting stage reset).
+	writeLine(t, writer, "XCLIENT NAME=spike.porcupine.org ADDR=168.100.189.2 PORT=12345 PROTO=ESMTP")
+	resp := readLine(t, reader)
+	if !strings.Contains(resp, fmt.Sprintf("%d ", smtp.Code220)) {
+		t.Fatalf("Expected 220 after XCLIENT, got: %s", resp)
+	}
+
+	// After the reset, the session is at the HELO stage again: EHLO then MAIL FROM.
+	writeLine(t, writer, "EHLO spike.porcupine.org")
+	for {
+		line := readLine(t, reader)
+		if strings.HasPrefix(line, fmt.Sprintf("%d ", smtp.Code250)) {
+			break
+		}
+	}
+
+	writeLine(t, writer, "MAIL FROM:<wietse@porcupine.org>")
+	resp = readLine(t, reader)
+	if !strings.Contains(resp, "250") {
+		t.Fatalf("Expected 250 for MAIL FROM after XCLIENT, got: %s", resp)
+	}
+
+	// XCLIENT is rejected mid-transaction (between MAIL and DOT) with 503.
+	writeLine(t, writer, "XCLIENT ADDR=1.2.3.4")
+	resp = readLine(t, reader)
+	if !strings.Contains(resp, "503") {
+		t.Fatalf("Expected 503 for XCLIENT mid-transaction, got: %s", resp)
+	}
+
+	// Clean up the transaction and QUIT.
+	writeLine(t, writer, "RSET")
+	readLine(t, reader)
 	writeLine(t, writer, "QUIT")
 	readLine(t, reader)
 }

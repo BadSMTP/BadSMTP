@@ -21,6 +21,7 @@ const (
 	CmdQUIT     = "QUIT"
 	CmdSTARTTLS = "STARTTLS"
 	CmdVRFY     = "VRFY"
+	CmdXCLIENT  = "XCLIENT"
 )
 
 // Command represents an SMTP command with its name and arguments.
@@ -46,6 +47,7 @@ func ParseCommand(line string) (*Command, error) {
 var validCommands = map[string]struct{}{
 	CmdHELO: {}, CmdEHLO: {}, CmdAUTH: {}, CmdMAIL: {}, CmdRCPT: {}, CmdDATA: {},
 	CmdBDAT: {}, CmdRSET: {}, CmdNOOP: {}, CmdQUIT: {}, CmdSTARTTLS: {}, CmdVRFY: {},
+	CmdXCLIENT: {},
 }
 
 // IsValid checks if the command is valid.
@@ -206,6 +208,16 @@ var allowedStates = map[string]map[State]bool{
 	CmdNOOP:     {StateHelo: true, StateMail: true, StateRcpt: true, StateData: true, StateBdat: true, StateAuth: true},
 	CmdQUIT:     {StateHelo: true, StateMail: true, StateRcpt: true, StateData: true, StateBdat: true, StateAuth: true},
 	CmdSTARTTLS: {StateHelo: true, StateMail: true},
+	// XCLIENT may be sent at any time except in the middle of a mail
+	// transaction (between MAIL FROM and DOT/RSET), per the Postfix XCLIENT
+	// spec. Note: StateMail is the post-EHLO idle state, before MAIL FROM.
+	CmdXCLIENT: {
+		StateGreeting: true,
+		StateHelo:     true,
+		StateAuth:     true,
+		StateMail:     true,
+		StateQuit:     true,
+	},
 	// VRFY may be issued at any time and does not affect session state
 	CmdVRFY: {
 		StateGreeting: true,

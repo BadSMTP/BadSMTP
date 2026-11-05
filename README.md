@@ -427,6 +427,45 @@ The `VRFY` command is a required part of the SMTP specification but is often dis
 | `unknown@example.com`   | `551`         | User does not exist                     |
 | `ambiguous@example.com` | `553`         | User ambiguous (e.g., multiple matches) |
 
+### `XCLIENT` support
+
+BadSMTP implements the [Postfix XCLIENT extension](https://www.postfix.org/XCLIENT_README.html), announced in `EHLO` as `250-XCLIENT NAME ADDR PORT PROTO HELO LOGIN`. An SMTP client may override the server's idea of the connection attributes for the duration of the session:
+
+```
+XCLIENT NAME=spike.porcupine.org ADDR=168.100.189.2 PORT=12345 PROTO=ESMTP
+```
+
+Attribute values are xtext-encoded (RFC 1891). `[UNAVAILABLE]` and `[TEMPUNAVAIL]` reset the corresponding override back to the real connection value. `ADDR` accepts IPv4 addresses or IPv6 addresses prefixed with `IPV6:`.
+
+On success the server responds `220` (greeting stage), exactly as Postfix does: the client must send `HELO`/`EHLO` again before `MAIL FROM`. `XCLIENT` is rejected with `503` in the middle of a mail transaction (between `MAIL FROM` and the terminating dot or `RSET`), and with `501` on malformed or unsupported attributes. Attributes persist until the end of the session or until reset.
+
+#### Behaviour re-triggering
+
+Unlike a production server, BadSMTP uses the overridden attributes to re-run its own test behaviours for the session:
+
+- `PORT=` / `DESTPORT=` re-runs the port behaviour analysis for that port: connecting "as" a greeting-delay port (25200..25209) delays the post-XCLIENT greeting, and a drop-delay port (25600..25609) drops the connection after the configured delay — without a response, just like the real drop ports.
+- `HELO=` re-runs the EHLO hostname capability parser, so a subsequent `EHLO`/`MAIL`/`AUTH` honours the overridden hostname's configuration (`size…`, `auth…`, `no…` toggles, `dlay<N>`) and error simulation (`helo<code>`); a hostname that configures a HELO error replaces the `220` response.
+- `LOGIN=` drives authentication outcomes through the usual `goodauth`/`badauth` patterns.
+- `NAME=` / `ADDR=` are used in log output and message metadata (client IP).
+
+Example — re-trigger a 2-second greeting delay and restrict auth within one connection:
+
+```
+220 badsmtp.test ESMTP ...
+EHLO client.example.com
+250-badsmtp.test
+...
+250-XCLIENT NAME ADDR PORT PROTO HELO LOGIN
+250 OK
+XCLIENT PORT=25202 HELO=noauth.example.com
+220 badsmtp.test ESMTP ...
+EHLO client.example.com
+250-badsmtp.test
+... (no AUTH advertised; commands delayed by 2s) ...
+```
+
+`XCLIENT` may be disabled entirely with the `disable_xclient` config key (`BADSMTP_DISABLE_XCLIENT=1` env var or `--disable-xclient` flag); when disabled the command is rejected with `502` and the capability is not advertised. BadSMTP never relays mail, so overrides only affect its own simulated behaviours, logging, and stored message metadata.
+
 ## Building and Deployment
 
 ### Local Development

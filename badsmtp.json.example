@@ -16,6 +16,7 @@
   "tls_key_file": "",
 
   "enable_hostname_routing": false,
+  "disable_xclient": false,
   "default_mailbox_dir": "",
   "hostname_mailbox_map": {}
 }

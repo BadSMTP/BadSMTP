@@ -207,6 +207,11 @@ type Config struct {
 	// hostname -> mailbox directory mapping (for static config)
 	DefaultMailboxDir string `mapstructure:"default_mailbox_dir"` // fallback directory for unmapped hostnames
 
+	// XCLIENT extension (Postfix XCLIENT_README): allows clients to override
+	// session attributes (NAME/ADDR/PORT/PROTO/HELO/LOGIN) which re-triggers
+	// BadSMTP's behaviour analysis for this session.
+	DisableXclient bool `mapstructure:"disable_xclient"` // Disable XCLIENT command (default: enabled)
+
 	// Extensions: Pluggable architecture for extending functionality
 	// These interfaces allow external packages to extend functionality
 	MessageStore     MessageStore     `mapstructure:"-"` // Where messages are stored (default: local files)

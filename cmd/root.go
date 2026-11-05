@@ -134,6 +134,7 @@ func RegisterFlags() {
 	pf.StringP("mailbox", "m", "./mailbox", "Directory to store messages")
 	pf.StringP("config", "c", "", "Configuration file path")
 	pf.Bool("enable-hostname-routing", false, "Enable hostname-based routing")
+	pf.Bool("disable-xclient", false, "Disable the XCLIENT extension (enabled by default)")
 	pf.String("default-mailbox-dir", "", "Default mailbox directory for unmapped hostnames")
 
 	// Listen address (bind IP)
