@@ -34,9 +34,9 @@ jobs:
       run: FAST_TESTS=true ./run_tests.sh
     
     - name: Upload coverage reports
-      uses: codecov/codecov-action@v5 # pinned alt: uses: codecov/codecov-action@<sha-for-v5>
+      uses: codecov/codecov-action@v7 # pinned alt: uses: codecov/codecov-action@<sha-for-v7>
       with:
-        file: ./combined_coverage.out
+        files: ./combined_coverage.out
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false
