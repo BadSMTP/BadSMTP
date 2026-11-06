@@ -114,6 +114,8 @@ sudo dpkg -i badsmtp-riscv64.deb
 
 ## Configuration
 
+BadSMTP is fully intended to be usable with no configuration at all — just run it as-is — but if you do want to change its default behaviour, you can.
+
 BadSMTP uses [Koanf](https://pkg.go.dev/github.com/knadh/koanf) for merging configuration from flags, environment variables, and config files. The precedence is:
 
 1. Command-line switches
@@ -167,7 +169,7 @@ Switches are registered on the root command and follow the same logical names, t
 The IP address (and indirectly, the interface) the server binds to is configurable via the `listen_address` config key (YAML/JSON) or the `BADSMTP_LISTEN_ADDRESS` environment variable. The default is `127.0.0.1`. Set it to `0.0.0.0` to bind all interfaces, or specify a particular IP to restrict the listener.
 
 > [!CAUTION]
-> In CI and development environments, avoid using anything other than localhost to prevent exposing the test server externally.
+> In CI and development environments, avoid using anything other than `localhost` to prevent exposing the test server externally.
 
 ### Port-based Connection Behaviours
 
@@ -205,6 +207,7 @@ BadSMTP provides TLS support for encrypted SMTP connections using SMTPS and SMTP
 - **Port 25465** (default): TLS connection from the start
 - Automatically generates self-signed certificates
 - Supports custom certificates via `TLS_CERT_FILE` and `TLS_KEY_FILE`
+- See below for how to test older TLS versions.
 
 Test with OpenSSL:
 
@@ -217,6 +220,7 @@ openssl s_client -connect localhost:25465 -crlf
 - **Port 25587** (default): Start with plain text, upgrade to TLS
 - Use `STARTTLS` command after `EHLO`
 - Supports hostname-based dynamic certificate generation
+- See below for how to test older TLS versions.
 
 Test with OpenSSL:
 
@@ -242,7 +246,7 @@ openssl s_client -connect localhost:25470 -tls1 -crlf
 ```
 
 > [!NOTE]
-> Recent Ubuntu and Debian releases disable TLS 1.0/1.1 in OpenSSL, so clients using the system OpenSSL may fail to negotiate them even on the legacy ports. BadSMTP uses Go's bundled TLS stack, so the server side always honours the port's minimum version; end-to-end support depends on the client platform.
+> Recent Ubuntu and Debian releases disable TLS 1.0/1.1 in OpenSSL, so clients using the system OpenSSL may fail to negotiate them even on the legacy ports. BadSMTP uses Go's bundled TLS stack, so the server side always honours the port's minimum version; end-to-end support thus depends on the client platform.
 
 ### Requesting Specific Error Responses
 

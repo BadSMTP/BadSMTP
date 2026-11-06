@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.2](https://github.com/BadSMTP/BadSMTP/compare/v0.3.1...v0.3.2) - 2026-11-06
 
 ### Added
-- Allow downgrade to TLS 1.0 and 1.1 for compatibility with old clients, such as PHP 5.5 using a CLI switch like `--min-tls-version TLS10`.
+- Provide additional ports that support TLS 1.0 and 1.1 for implicit and explicit TLS for compatibility with old clients, such as PHP 5.5.
 
 ### Changed
 - Update CI action versions and nodejs.
