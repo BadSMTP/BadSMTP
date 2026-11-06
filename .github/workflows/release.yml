@@ -60,13 +60,9 @@ jobs:
         with:
           go-version: '1.27'
 
-      - name: Cache Go modules
-        uses: actions/cache@v5
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+      # No explicit actions/cache step: setup-go caches the module and build
+      # caches by default (keyed on go.sum); adding another cache over the
+      # same ~/go/pkg/mod path makes tar fail with "Cannot open: File exists".
 
       - name: Download dependencies
         run: go mod download
