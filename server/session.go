@@ -1066,6 +1066,10 @@ func (s *Session) upgradeToTLS(cert *tls.Certificate) error {
 	}
 
 	s.conn = tlsConn
+	// Rebuild the buffered readers on the TLS connection; the command loop
+	// must not keep reading from the pre-handshake plaintext reader.
+	s.connReader = bufio.NewReader(s.conn)
+	s.connTP = textproto.NewReader(s.connReader)
 	tlsState := tlsConn.ConnectionState()
 	s.tlsState = &tlsState
 	s.logTLSInfo(&tlsState)
