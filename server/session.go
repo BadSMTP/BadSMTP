@@ -1084,6 +1084,10 @@ func (s *Session) logTLSInfo(tlsState *tls.ConnectionState) {
 	cipher := "unknown"
 	if tlsState != nil && tlsState.Version != 0 {
 		switch tlsState.Version {
+		case tls.VersionTLS10:
+			tlsVersion = "TLS 1.0"
+		case tls.VersionTLS11:
+			tlsVersion = "TLS 1.1"
 		case tls.VersionTLS12:
 			tlsVersion = "TLS 1.2"
 		case tls.VersionTLS13:

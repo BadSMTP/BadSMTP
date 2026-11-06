@@ -113,9 +113,9 @@ func TestTLSPostQuantumKeyExchange(t *testing.T) {
 	}
 }
 
-// TestLegacyTLSPortAnalysis verifies that AnalysePortBehaviour sets the
-// per-port minimum TLS version for the legacy TLS ports and leaves it at the
-// secure default everywhere else.
+// TestLegacyTLSPortAnalysis verifies that the per-port minimum TLS version is
+// derived correctly for the legacy TLS ports and falls back to the secure
+// default everywhere else.
 func TestLegacyTLSPortAnalysis(t *testing.T) {
 	tests := []struct {
 		name string
@@ -126,19 +126,16 @@ func TestLegacyTLSPortAnalysis(t *testing.T) {
 		{name: "legacy implicit TLS 1.1 port", port: 25471, want: tls.VersionTLS11},
 		{name: "legacy STARTTLS 1.0 port", port: 25590, want: tls.VersionTLS10},
 		{name: "legacy STARTTLS 1.1 port", port: 25591, want: tls.VersionTLS11},
-		{name: "main implicit TLS port keeps default", port: 25465, want: 0},
-		{name: "main STARTTLS port keeps default", port: 25587, want: 0},
-		{name: "normal port keeps default", port: 2525, want: 0},
-		{name: "port below legacy range keeps default", port: 25469, want: 0},
-		{name: "port above legacy range keeps default", port: 25472, want: 0},
+		{name: "main implicit TLS port keeps default", port: 25465, want: tls.VersionTLS12},
+		{name: "main STARTTLS port keeps default", port: 25587, want: tls.VersionTLS12},
+		{name: "normal port keeps default", port: 2525, want: tls.VersionTLS12},
+		{name: "port below legacy range keeps default", port: 25469, want: tls.VersionTLS12},
+		{name: "port above legacy range keeps default", port: 25472, want: tls.VersionTLS12},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{Port: tt.port}
-			cfg.EnsureDefaults()
-			cfg.AnalysePortBehaviour()
-			if cfg.LegacyTLSMinVersion != tt.want {
-				t.Fatalf("port %d: LegacyTLSMinVersion = %d, want %d", tt.port, cfg.LegacyTLSMinVersion, tt.want)
+			if got := legacyTLSMinVersionForPort(tt.port); got != tt.want {
+				t.Fatalf("port %d: legacyTLSMinVersionForPort = %d, want %d", tt.port, got, tt.want)
 			}
 		})
 	}

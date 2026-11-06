@@ -199,11 +199,6 @@ type Config struct {
 	DropDelay     int    `mapstructure:"drop_delay"`
 	DropImmediate bool   `mapstructure:"drop_immediate"`
 
-	// LegacyTLSMinVersion is the minimum TLS version allowed by the legacy
-	// TLS ports (25470/25471 and 25590/25591). It is set by port analysis,
-	// not by configuration: zero means the secure default (TLS 1.2).
-	LegacyTLSMinVersion uint16 `mapstructure:"-"`
-
 	// Port range configurations
 	GreetingDelayPortStart int `mapstructure:"greeting_delay_port_start"`
 	DropDelayPortStart     int `mapstructure:"drop_delay_port_start"`
@@ -492,15 +487,8 @@ func (c *Config) AnalysePortBehaviour() {
 		}
 	}
 
-	// Legacy TLS versions: dedicated ports opt into old TLS. Offset 0 allows
-	// TLS 1.0, offset 1 allows TLS 1.1; all other ports use the secure
-	// default (TLS 1.2). Applies to both implicit TLS and STARTTLS ranges.
-	if port >= LegacyTLSPortStart && port < LegacyTLSPortStart+LegacyTLSRangeSize {
-		c.LegacyTLSMinVersion = legacyTLSVersionForOffset(port - LegacyTLSPortStart)
-	}
-	if port >= LegacySTARTTLSPortStart && port < LegacySTARTTLSPortStart+LegacyTLSRangeSize {
-		c.LegacyTLSMinVersion = legacyTLSVersionForOffset(port - LegacySTARTTLSPortStart)
-	}
+	// Legacy TLS versions need no per-config state: the minimum version is
+	// derived from the port number directly (see legacyTLSMinVersionForPort).
 
 	// No separate ImmediateDropPort anymore; immediate drop represented by DropDelayPortStart + offset 0
 }
