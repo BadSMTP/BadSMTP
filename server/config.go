@@ -33,13 +33,17 @@ const (
 	// DefaultSTARTTLSPort is the port number to listen for STARTTLS connections (SMTP+STARTTLS).
 	DefaultSTARTTLSPort = 25587
 
+	// LegacyTLSPortStart is the first port of the implicit-TLS range that
+	// allows old TLS versions: offset 0 -> TLS 1.0, offset 1 -> TLS 1.1.
+	LegacyTLSPortStart = 25470
+	// LegacySTARTTLSPortStart is the first port of the STARTTLS range that
+	// allows old TLS versions: offset 0 -> TLS 1.0, offset 1 -> TLS 1.1.
+	LegacySTARTTLSPortStart = 25590
+	// LegacyTLSRangeSize is the number of ports in each legacy TLS range.
+	LegacyTLSRangeSize = 2
+
 	// DefaultTLSHostname is the default hostname used for generated self-signed certificates.
 	DefaultTLSHostname = "badsmtp.test"
-
-	// DefaultMinTLSVersion is the default minimum TLS version for SMTPS and
-	// STARTTLS. TLS 1.0/1.1 are opt-in via min_tls_version: they are insecure
-	// and modern platforms disable them in OpenSSL anyway.
-	DefaultMinTLSVersion = "TLS12"
 
 	// CertValidityHours is the number of hours that a generated certificate is valid for.
 	CertValidityHours = 24
@@ -195,6 +199,11 @@ type Config struct {
 	DropDelay     int    `mapstructure:"drop_delay"`
 	DropImmediate bool   `mapstructure:"drop_immediate"`
 
+	// LegacyTLSMinVersion is the minimum TLS version allowed by the legacy
+	// TLS ports (25470/25471 and 25590/25591). It is set by port analysis,
+	// not by configuration: zero means the secure default (TLS 1.2).
+	LegacyTLSMinVersion uint16 `mapstructure:"-"`
+
 	// Port range configurations
 	GreetingDelayPortStart int `mapstructure:"greeting_delay_port_start"`
 	DropDelayPortStart     int `mapstructure:"drop_delay_port_start"`
@@ -205,11 +214,6 @@ type Config struct {
 	TLSPort      int    `mapstructure:"tls_port"`      // Port for implicit TLS (default 25465)
 	STARTTLSPort int    `mapstructure:"starttls_port"` // Port for STARTTLS (default 25587)
 	TLSHostname  string `mapstructure:"tls_hostname"`  // Hostname for TLS certificate (default: "badsmtp.test")
-	// Minimum TLS version for SMTPS and STARTTLS: TLS10, TLS11, TLS12 (default) or TLS13.
-	// TLS 1.0/1.1 are opt-in only: they are insecure, and modern platforms
-	// (e.g. Ubuntu >= 22.04) disable them in OpenSSL, so clients may fail to
-	// negotiate them regardless of this setting.
-	MinTLSVersion string `mapstructure:"min_tls_version"`
 
 	// Hostname-based mailbox routing
 	EnableHostnameRouting bool              `mapstructure:"enable_hostname_routing"` // Enable hostname-based routing
@@ -306,26 +310,6 @@ func (c *Config) ensureScalarDefaults() {
 	}
 	if c.TLSHostname == "" {
 		c.TLSHostname = DefaultTLSHostname
-	}
-	if c.MinTLSVersion == "" {
-		c.MinTLSVersion = DefaultMinTLSVersion
-	}
-}
-
-// ParseMinTLSVersion converts a min_tls_version config value (TLS10, TLS11,
-// TLS12, TLS13) into the crypto/tls constant it controls the handshake with.
-func ParseMinTLSVersion(value string) (uint16, error) {
-	switch strings.ToUpper(value) {
-	case "TLS10":
-		return tls.VersionTLS10, nil
-	case "TLS11":
-		return tls.VersionTLS11, nil
-	case "TLS12":
-		return tls.VersionTLS12, nil
-	case "TLS13":
-		return tls.VersionTLS13, nil
-	default:
-		return 0, fmt.Errorf("invalid min_tls_version %q: must be one of TLS10, TLS11, TLS12, TLS13", value)
 	}
 }
 
@@ -508,7 +492,38 @@ func (c *Config) AnalysePortBehaviour() {
 		}
 	}
 
+	// Legacy TLS versions: dedicated ports opt into old TLS. Offset 0 allows
+	// TLS 1.0, offset 1 allows TLS 1.1; all other ports use the secure
+	// default (TLS 1.2). Applies to both implicit TLS and STARTTLS ranges.
+	if port >= LegacyTLSPortStart && port < LegacyTLSPortStart+LegacyTLSRangeSize {
+		c.LegacyTLSMinVersion = legacyTLSVersionForOffset(port - LegacyTLSPortStart)
+	}
+	if port >= LegacySTARTTLSPortStart && port < LegacySTARTTLSPortStart+LegacyTLSRangeSize {
+		c.LegacyTLSMinVersion = legacyTLSVersionForOffset(port - LegacySTARTTLSPortStart)
+	}
+
 	// No separate ImmediateDropPort anymore; immediate drop represented by DropDelayPortStart + offset 0
+}
+
+// legacyTLSVersionForOffset maps a legacy TLS port offset to the minimum TLS
+// version that port allows.
+func legacyTLSVersionForOffset(offset int) uint16 {
+	if offset == 0 {
+		return tls.VersionTLS10
+	}
+	return tls.VersionTLS11
+}
+
+// legacyTLSMinVersionForPort returns the minimum TLS version allowed on the
+// given port: TLS 1.0/1.1 on the legacy TLS ports, TLS 1.2 everywhere else.
+func legacyTLSMinVersionForPort(port int) uint16 {
+	if port >= LegacyTLSPortStart && port < LegacyTLSPortStart+LegacyTLSRangeSize {
+		return legacyTLSVersionForOffset(port - LegacyTLSPortStart)
+	}
+	if port >= LegacySTARTTLSPortStart && port < LegacySTARTTLSPortStart+LegacyTLSRangeSize {
+		return legacyTLSVersionForOffset(port - LegacySTARTTLSPortStart)
+	}
+	return tls.VersionTLS12
 }
 
 // GetBehaviourDescription returns a human-readable description of the port behaviour.
@@ -527,9 +542,22 @@ func (c *Config) GetBehaviourDescription() string {
 			return "Immediate drop"
 		}
 		return fmt.Sprintf("Drop with delay: %ds", delay)
+	case port >= LegacyTLSPortStart && port < LegacyTLSPortStart+LegacyTLSRangeSize:
+		return fmt.Sprintf("Implicit TLS, minimum %s", legacyTLSVersionName(port-LegacyTLSPortStart))
+	case port >= LegacySTARTTLSPortStart && port < LegacySTARTTLSPortStart+LegacyTLSRangeSize:
+		return fmt.Sprintf("STARTTLS, minimum %s", legacyTLSVersionName(port-LegacySTARTTLSPortStart))
 	default:
 		return "Normal behaviour"
 	}
+}
+
+// legacyTLSVersionName returns the human-readable TLS version a legacy port
+// offset allows.
+func legacyTLSVersionName(offset int) string {
+	if offset == 0 {
+		return "TLS 1.0"
+	}
+	return "TLS 1.1"
 }
 
 // ValidatePortConfiguration validates that all port configurations don't conflict
@@ -542,6 +570,11 @@ func (c *Config) ValidatePortConfiguration() error {
 	// Add port ranges (now small discrete ranges of DelayCount ports)
 	validator.AddRange(NewPortRange("greeting delay", c.GreetingDelayPortStart, RangeSize))
 	validator.AddRange(NewPortRange("drop delay", c.DropDelayPortStart, RangeSize))
+
+	// Legacy TLS ranges are fixed, not configurable, but must not collide
+	// with user-configured ports or ranges.
+	validator.AddRange(NewPortRange("legacy TLS", LegacyTLSPortStart, LegacyTLSRangeSize-1))
+	validator.AddRange(NewPortRange("legacy STARTTLS", LegacySTARTTLSPortStart, LegacyTLSRangeSize-1))
 
 	// Add individual ports
 	validator.AddPort("normal", c.Port)

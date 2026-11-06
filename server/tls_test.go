@@ -113,69 +113,58 @@ func TestTLSPostQuantumKeyExchange(t *testing.T) {
 	}
 }
 
-func TestParseMinTLSVersion(t *testing.T) {
+// TestLegacyTLSPortAnalysis verifies that AnalysePortBehaviour sets the
+// per-port minimum TLS version for the legacy TLS ports and leaves it at the
+// secure default everywhere else.
+func TestLegacyTLSPortAnalysis(t *testing.T) {
 	tests := []struct {
-		name    string
-		value   string
-		want    uint16
-		wantErr bool
+		name string
+		port int
+		want uint16
 	}{
-		{name: "TLS10", value: "TLS10", want: tls.VersionTLS10},
-		{name: "TLS11", value: "TLS11", want: tls.VersionTLS11},
-		{name: "TLS12", value: "TLS12", want: tls.VersionTLS12},
-		{name: "TLS13", value: "TLS13", want: tls.VersionTLS13},
-		{name: "case insensitive", value: "tls12", want: tls.VersionTLS12},
-		{name: "empty", value: "", wantErr: true},
-		{name: "invalid", value: "TLS09", wantErr: true},
-		{name: "not a version", value: "SSL30", wantErr: true},
+		{name: "legacy implicit TLS 1.0 port", port: 25470, want: tls.VersionTLS10},
+		{name: "legacy implicit TLS 1.1 port", port: 25471, want: tls.VersionTLS11},
+		{name: "legacy STARTTLS 1.0 port", port: 25590, want: tls.VersionTLS10},
+		{name: "legacy STARTTLS 1.1 port", port: 25591, want: tls.VersionTLS11},
+		{name: "main implicit TLS port keeps default", port: 25465, want: 0},
+		{name: "main STARTTLS port keeps default", port: 25587, want: 0},
+		{name: "normal port keeps default", port: 2525, want: 0},
+		{name: "port below legacy range keeps default", port: 25469, want: 0},
+		{name: "port above legacy range keeps default", port: 25472, want: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseMinTLSVersion(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("ParseMinTLSVersion(%q) expected error, got %d", tt.value, got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("ParseMinTLSVersion(%q) unexpected error: %v", tt.value, err)
-			}
-			if got != tt.want {
-				t.Fatalf("ParseMinTLSVersion(%q) = %d, want %d", tt.value, got, tt.want)
+			cfg := &Config{Port: tt.port}
+			cfg.EnsureDefaults()
+			cfg.AnalysePortBehaviour()
+			if cfg.LegacyTLSMinVersion != tt.want {
+				t.Fatalf("port %d: LegacyTLSMinVersion = %d, want %d", tt.port, cfg.LegacyTLSMinVersion, tt.want)
 			}
 		})
 	}
 }
 
-func TestDefaultMinTLSVersionIsTLS12(t *testing.T) {
-	cfg := &Config{Port: 2525}
-	cfg.EnsureDefaults()
-	if cfg.MinTLSVersion != "TLS12" {
-		t.Fatalf("expected default min_tls_version TLS12, got %q", cfg.MinTLSVersion)
-	}
-}
-
-// TestUpgradeToTLSMinVersionEnforced verifies that upgradeToTLS rejects
-// handshakes below the configured minimum and accepts those at or above it.
-func TestUpgradeToTLSMinVersionEnforced(t *testing.T) {
+// TestUpgradeToTLSLegacyPortAccepted verifies that a session on a legacy
+// STARTTLS port accepts a TLS 1.0 handshake, while the default STARTTLS port
+// rejects it.
+func TestUpgradeToTLSLegacyPortAccepted(t *testing.T) {
 	for _, tt := range []struct {
 		name       string
-		minVersion string
+		port       int
 		clientMax  uint16
 		expectFail bool
 	}{
-		{name: "TLS10 client rejected by TLS12 default", minVersion: "TLS12", clientMax: tls.VersionTLS10, expectFail: true},
-		{name: "TLS11 client rejected by TLS12 default", minVersion: "TLS12", clientMax: tls.VersionTLS11, expectFail: true},
-		{name: "TLS12 client accepted by TLS12 default", minVersion: "TLS12", clientMax: tls.VersionTLS12, expectFail: false},
-		{name: "TLS10 client accepted when min is TLS10", minVersion: "TLS10", clientMax: tls.VersionTLS10, expectFail: false},
+		{name: "TLS 1.0 client accepted on legacy port 25590", port: 25590, clientMax: tls.VersionTLS10, expectFail: false},
+		{name: "TLS 1.1 client accepted on legacy port 25591", port: 25591, clientMax: tls.VersionTLS11, expectFail: false},
+		{name: "TLS 1.0 client rejected on default STARTTLS port", port: 25587, clientMax: tls.VersionTLS10, expectFail: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			srvConn, cliConn := net.Pipe()
 			defer func() { _ = srvConn.Close(); _ = cliConn.Close() }()
 
-			cfg := &Config{Port: 2525, MinTLSVersion: tt.minVersion}
+			cfg := &Config{Port: tt.port}
 			cfg.EnsureDefaults()
+			cfg.AnalysePortBehaviour()
 			sess := NewSession(srvConn, cfg, nil)
 
 			cert, err := sess.obtainTLSCertificate("localhost")

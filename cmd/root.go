@@ -150,8 +150,6 @@ func RegisterFlags() {
 	pf.Int("tls-port", server.DefaultTLSPort, "Port for implicit TLS (SMTPS)")
 	pf.Int("starttls-port", server.DefaultSTARTTLSPort, "Port for STARTTLS")
 	pf.String("tls-hostname", server.DefaultTLSHostname, "Hostname for TLS certificate")
-	pf.String("min-tls-version", server.DefaultMinTLSVersion,
-		"Minimum TLS version for SMTPS/STARTTLS: TLS10, TLS11, TLS12 or TLS13 (default TLS12)")
 
 	// Logging configuration (empty defaults so unset flags fall back to config
 	// file/env values and finally the built-in logging defaults)

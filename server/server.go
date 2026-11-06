@@ -137,6 +137,15 @@ func (s *Server) Start() error {
 	go s.startTLSPortListener(s.config.TLSPort, "Implicit TLS")
 	go s.startPortListener(s.config.STARTTLSPort, "STARTTLS")
 
+	// Start legacy TLS ports: dedicated ports that opt into old TLS versions
+	// (offset 0 -> TLS 1.0, offset 1 -> TLS 1.1). All other ports require
+	// TLS 1.2 or newer.
+	for i := range LegacyTLSRangeSize {
+		version := legacyTLSVersionName(i)
+		go s.startTLSPortListener(LegacyTLSPortStart+i, "Implicit TLS, minimum "+version)
+		go s.startPortListener(LegacySTARTTLSPortStart+i, "STARTTLS, minimum "+version)
+	}
+
 	// Log the started ports and ranges explicitly
 	// (we intentionally log the base/range rather than the full slice of ports)
 
@@ -146,6 +155,8 @@ func (s *Server) Start() error {
 		logging.F("drop_delay_ports", fmt.Sprintf("%d-%d", s.config.DropDelayPortStart, s.config.DropDelayPortStart+PortRangeEnd)),
 		logging.F("tls_port", s.config.TLSPort),
 		logging.F("starttls_port", s.config.STARTTLSPort),
+		logging.F("legacy_tls_ports", fmt.Sprintf("%d-%d", LegacyTLSPortStart, LegacyTLSPortStart+LegacyTLSRangeSize-1)),
+		logging.F("legacy_starttls_ports", fmt.Sprintf("%d-%d", LegacySTARTTLSPortStart, LegacySTARTTLSPortStart+LegacyTLSRangeSize-1)),
 		logging.F("log_level", s.config.LogConfig.Level.String()),
 		logging.F("log_output", s.config.LogConfig.Output))
 
@@ -214,10 +225,11 @@ func (s *Server) startPortRangeListeners(startPort, count int, description strin
 // createTLSListener builds a tls.Config with dynamic certificate generation and
 // starts listening on the given port. It returns the listener or an error.
 func (s *Server) createTLSListener(port int) (net.Listener, error) {
-	minVersion, err := ParseMinTLSVersion(s.config.MinTLSVersion)
-	if err != nil {
-		return nil, err
-	}
+	// Per-port minimum: the legacy TLS ports (25470/25471) opt into old TLS
+	// versions; every other port requires TLS 1.2 or newer. The server-level
+	// config has not been port-analysed, so derive the minimum from the
+	// port number directly.
+	minVersion := legacyTLSMinVersionForPort(port)
 
 	// Create TLS configuration with dynamic certificate generation
 	tlsConfig := &tls.Config{
