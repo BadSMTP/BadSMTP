@@ -14,7 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added XCLIENT support for testing SMTP clients that implement the XCLIENT extension, allowing simulation of client IP address, hostname, and other properties.
-- 
 
 ## [0.2.1](https://github.com/BadSMTP/BadSMTP/compare/v0.2.0...v0.2.1) - 2026-10-15
 
