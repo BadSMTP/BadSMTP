@@ -25,13 +25,13 @@ jobs:
 
     - name: Set up Go (non-nightly)
       if: matrix.go-version != 'nightly'
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ matrix.go-version }}
 
     - name: Set up Go (nightly via gotip)
       if: matrix.go-version == 'nightly'
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         # Build Go tip with the current stable toolchain; bootstrapping tip now
         # requires Go 1.26+, which the project's 1.27 target satisfies.
@@ -126,7 +126,7 @@ jobs:
       uses: actions/checkout@v6
     
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version: '1.27'
 
@@ -171,7 +171,7 @@ jobs:
       uses: actions/checkout@v6
     
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version: '1.27'
     
@@ -226,7 +226,7 @@ jobs:
       uses: actions/checkout@v6
     
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version: '1.27'
     
@@ -258,7 +258,7 @@ jobs:
       uses: actions/checkout@v6
     
     - name: Set up Go
-      uses: actions/setup-go@v6.1.0
+      uses: actions/setup-go@v7
       with:
         go-version: '1.27'
 
@@ -266,7 +266,7 @@ jobs:
     # Installing via `go install` would require Go 1.26+ to compile v2.14.0;
     # the prebuilt binary keeps the lint job independent of the toolchain.
     - name: Run golangci-lint
-      uses: golangci/golangci-lint-action@v8
+      uses: golangci/golangci-lint-action@v9
       with:
         version: v2.14.0
 
@@ -291,13 +291,13 @@ jobs:
 
     - name: Set up Go (non-nightly)
       if: matrix.go-version != 'nightly'
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ matrix.go-version }}
 
     - name: Set up Go (nightly via gotip)
       if: matrix.go-version == 'nightly'
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         # Build Go tip with the current stable toolchain; bootstrapping tip now
         # requires Go 1.26+, which the project's 1.27 target satisfies.
@@ -334,7 +334,7 @@ jobs:
       uses: actions/checkout@v6
 
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version: '1.27'
     
