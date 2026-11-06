@@ -137,6 +137,7 @@ mailbox_dir: ./mailbox
 
 tls_port: 25465
 starttls_port: 25587
+min_tls_version: TLS12
 
 greeting_delay_port_start: 25200
 drop_delay_port_start: 25600
@@ -150,6 +151,7 @@ Environment variables are read with the `BADSMTP_` prefix and use uppercase snak
 export BADSMTP_PORT=2525
 export BADSMTP_MAILBOX_DIR=./mailbox
 export BADSMTP_TLS_PORT=25465
+export BADSMTP_MIN_TLS_VERSION=TLS12
 ```
 
 ### Command-line switches
@@ -223,6 +225,17 @@ Test with OpenSSL:
 ```bash
 openssl s_client -connect localhost:25587 -starttls smtp -crlf
 ```
+
+#### Minimum TLS version
+
+The minimum TLS version for both SMTPS and STARTTLS is configurable at runtime via the `min_tls_version` config key, the `BADSMTP_MIN_TLS_VERSION` environment variable, or the `--min-tls-version` flag. Accepted values are `TLS10`, `TLS11`, `TLS12` and `TLS13`. The default is `TLS12`.
+
+```bash
+./badsmtp --min-tls-version TLS13
+```
+
+> [!NOTE]
+> TLS 1.0 and 1.1 are opt-in only: they are insecure, and recent Ubuntu and Debian releases disable them in OpenSSL, so clients using the system OpenSSL may fail to negotiate them regardless of this setting. BadSMTP uses Go's bundled TLS stack, so it will still accept TLS 1.0/1.1 handshakes when explicitly configured, but end-to-end support depends on the client platform.
 
 ### Requesting Specific Error Responses
 

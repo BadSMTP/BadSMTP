@@ -27,8 +27,6 @@ const (
 	PortRangeSize = DelayCount
 	// PortRangeEnd is the last offset in a port range
 	PortRangeEnd = DelayCount - 1
-	// MinTLSVersion is the minimum TLS version supported by the server
-	MinTLSVersion = tls.VersionTLS12
 
 	// DefaultShutdownTimeout is the graceful shutdown timeout used by the server
 	DefaultShutdownTimeout = 10 * time.Second
@@ -216,6 +214,11 @@ func (s *Server) startPortRangeListeners(startPort, count int, description strin
 // createTLSListener builds a tls.Config with dynamic certificate generation and
 // starts listening on the given port. It returns the listener or an error.
 func (s *Server) createTLSListener(port int) (net.Listener, error) {
+	minVersion, err := ParseMinTLSVersion(s.config.MinTLSVersion)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create TLS configuration with dynamic certificate generation
 	tlsConfig := &tls.Config{
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
@@ -240,7 +243,7 @@ func (s *Server) createTLSListener(port int) (net.Listener, error) {
 			}
 			return &cert, nil
 		},
-		MinVersion: MinTLSVersion,
+		MinVersion: minVersion,
 	}
 
 	addr := net.JoinHostPort(s.config.ListenAddress, strconv.Itoa(port))

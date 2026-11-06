@@ -36,6 +36,11 @@ const (
 	// DefaultTLSHostname is the default hostname used for generated self-signed certificates.
 	DefaultTLSHostname = "badsmtp.test"
 
+	// DefaultMinTLSVersion is the default minimum TLS version for SMTPS and
+	// STARTTLS. TLS 1.0/1.1 are opt-in via min_tls_version: they are insecure
+	// and modern platforms disable them in OpenSSL anyway.
+	DefaultMinTLSVersion = "TLS12"
+
 	// CertValidityHours is the number of hours that a generated certificate is valid for.
 	CertValidityHours = 24
 
@@ -200,6 +205,11 @@ type Config struct {
 	TLSPort      int    `mapstructure:"tls_port"`      // Port for implicit TLS (default 25465)
 	STARTTLSPort int    `mapstructure:"starttls_port"` // Port for STARTTLS (default 25587)
 	TLSHostname  string `mapstructure:"tls_hostname"`  // Hostname for TLS certificate (default: "badsmtp.test")
+	// Minimum TLS version for SMTPS and STARTTLS: TLS10, TLS11, TLS12 (default) or TLS13.
+	// TLS 1.0/1.1 are opt-in only: they are insecure, and modern platforms
+	// (e.g. Ubuntu >= 22.04) disable them in OpenSSL, so clients may fail to
+	// negotiate them regardless of this setting.
+	MinTLSVersion string `mapstructure:"min_tls_version"`
 
 	// Hostname-based mailbox routing
 	EnableHostnameRouting bool              `mapstructure:"enable_hostname_routing"` // Enable hostname-based routing
@@ -296,6 +306,26 @@ func (c *Config) ensureScalarDefaults() {
 	}
 	if c.TLSHostname == "" {
 		c.TLSHostname = DefaultTLSHostname
+	}
+	if c.MinTLSVersion == "" {
+		c.MinTLSVersion = DefaultMinTLSVersion
+	}
+}
+
+// ParseMinTLSVersion converts a min_tls_version config value (TLS10, TLS11,
+// TLS12, TLS13) into the crypto/tls constant it controls the handshake with.
+func ParseMinTLSVersion(value string) (uint16, error) {
+	switch strings.ToUpper(value) {
+	case "TLS10":
+		return tls.VersionTLS10, nil
+	case "TLS11":
+		return tls.VersionTLS11, nil
+	case "TLS12":
+		return tls.VersionTLS12, nil
+	case "TLS13":
+		return tls.VersionTLS13, nil
+	default:
+		return 0, fmt.Errorf("invalid min_tls_version %q: must be one of TLS10, TLS11, TLS12, TLS13", value)
 	}
 }
 

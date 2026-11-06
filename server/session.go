@@ -1052,9 +1052,14 @@ func (s *Session) obtainTLSCertificate(hostname string) (tls.Certificate, error)
 
 // upgradeToTLS performs the TLS handshake, updates the session connection and logs the result.
 func (s *Session) upgradeToTLS(cert *tls.Certificate) error {
+	minVersion, err := ParseMinTLSVersion(s.config.MinTLSVersion)
+	if err != nil {
+		return fmt.Errorf("invalid min_tls_version: %v", err)
+	}
+
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{*cert},
-		MinVersion:   tls.VersionTLS12,
+		MinVersion:   minVersion,
 	}
 
 	tlsConn := tls.Server(s.conn, tlsConfig)
@@ -1082,6 +1087,10 @@ func (s *Session) logTLSInfo(tlsState *tls.ConnectionState) {
 	cipher := "unknown"
 	if tlsState != nil && tlsState.Version != 0 {
 		switch tlsState.Version {
+		case tls.VersionTLS10:
+			tlsVersion = "TLS 1.0"
+		case tls.VersionTLS11:
+			tlsVersion = "TLS 1.1"
 		case tls.VersionTLS12:
 			tlsVersion = "TLS 1.2"
 		case tls.VersionTLS13:
