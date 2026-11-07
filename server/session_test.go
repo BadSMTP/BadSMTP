@@ -532,3 +532,31 @@ func TestSessionInvalidCommands(t *testing.T) {
 		t.Error("Expected command not recognised error")
 	}
 }
+
+func TestSessionMessageDiscardedWithoutMailbox(t *testing.T) {
+	conn := newMockConn()
+	config := newTestConfig() // no MailboxDir: messages must be discarded
+	session := NewSession(conn, config, nil)
+
+	conn.writeInput("EHLO client.example.com\r\n")
+	conn.writeInput("MAIL FROM:<sender@example.com>\r\n")
+	conn.writeInput("RCPT TO:<recipient@example.com>\r\n")
+	conn.writeInput("DATA\r\n")
+	conn.writeInput("Subject: Discard me\r\n")
+	conn.writeInput("\r\n")
+	conn.writeInput("This message should not be stored.\r\n")
+	conn.writeInput(".\r\n")
+	conn.writeInput("QUIT\r\n")
+
+	if err := session.Handle(); err != nil {
+		t.Fatalf("Session handle failed: %v", err)
+	}
+
+	output := conn.getOutput()
+	if !strings.Contains(output, "250 OK") {
+		t.Errorf("expected message acceptance (250 OK), got: %s", output)
+	}
+	if _, ok := config.MessageStore.(*DiscardMessageStore); !ok {
+		t.Errorf("expected DiscardMessageStore, got %T", config.MessageStore)
+	}
+}

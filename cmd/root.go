@@ -131,7 +131,7 @@ func getConfigSearchPaths() []string {
 func RegisterFlags() {
 	pf := rootCmd.PersistentFlags()
 	pf.IntP("port", "p", server.DefaultPort, "Port to listen on")
-	pf.StringP("mailbox", "m", "./mailbox", "Directory to store messages")
+	pf.StringP("mailbox", "m", "", "Maildir directory to save messages in (empty = discard messages)")
 	pf.StringP("config", "c", "", "Configuration file path")
 	pf.Bool("enable-hostname-routing", false, "Enable hostname-based routing")
 	pf.Bool("disable-xclient", false, "Disable the XCLIENT extension (enabled by default)")

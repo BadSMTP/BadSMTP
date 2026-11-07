@@ -135,6 +135,7 @@ The first config file found is used. You can also specify a custom config file p
 ```yaml
 # Server settings (snake_case keys)
 port: 2525
+# Set a maildir path to save messages; unset (or empty) to discard them
 mailbox_dir: ./mailbox
 
 tls_port: 25465
@@ -150,6 +151,7 @@ Environment variables are read with the `BADSMTP_` prefix and use uppercase snak
 
 ```bash
 export BADSMTP_PORT=2525
+# Set a maildir path to save messages; unset (or empty) to discard them
 export BADSMTP_MAILBOX_DIR=./mailbox
 export BADSMTP_TLS_PORT=25465
 ```
@@ -576,7 +578,13 @@ except smtplib.SMTPAuthenticationError:
 
 ### Message Storage
 
-When a mailbox is configured, successfully submitted messages (ones generating errors are not stored) are saved into a [maildir](https://en.wikipedia.org/wiki/Maildir) folder structure. Each message is stored as a separate file with a unique filename.
+By default, BadSMTP **discards** messages after accepting them — nothing is written to disk. This keeps the test server non-intrusive in CI and development environments.
+
+To save messages, set a maildir location via the `mailbox_dir` config key, the `BADSMTP_MAILBOX_DIR` environment variable, or the `--mailbox`/`-m` flag. When a mailbox is configured, successfully submitted messages (ones generating errors are not stored) are saved into a [maildir](https://en.wikipedia.org/wiki/Maildir) folder structure. Each message is stored as a separate file with a unique filename.
+
+```bash
+./badsmtp --mailbox ./mailbox
+```
 
 Maildir is widely supported and can be inspected using standard local mail clients, command-line tools, or IMAP servers.
 
@@ -754,7 +762,7 @@ BADSMTP_LOG_LEVEL=debug ./badsmtp
 | Variable      | Description                | Default   |
 |---------------|----------------------------|-----------|
 | `PORT`        | Port to listen on          | 2525      |
-| `MAILBOX_DIR` | Directory to save messages | ./mailbox |
+| `MAILBOX_DIR` | Maildir directory to save messages (empty = discard) | (empty) |
 
 #### TLS Configuration
 

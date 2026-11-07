@@ -286,7 +286,8 @@ func (c *Config) ensureScalarDefaults() {
 		c.Port = DefaultPort
 	}
 	if c.MailboxDir == "" {
-		c.MailboxDir = "./mailbox"
+		// Empty means messages are discarded after being received; a
+		// non-empty path opts into saving them as maildir.
 	}
 	if c.ListenAddress == "" {
 		c.ListenAddress = "127.0.0.1"
@@ -318,7 +319,12 @@ func (c *Config) ensureMapDefaults() {
 func (c *Config) ensureExtensionDefaults() {
 	// Ensure extension defaults
 	if c.MessageStore == nil {
-		c.MessageStore = NewDefaultMessageStore(c.MailboxDir)
+		if c.MailboxDir == "" {
+			// No mailbox configured: messages are accepted, then discarded.
+			c.MessageStore = NewDiscardMessageStore()
+		} else {
+			c.MessageStore = NewDefaultMessageStore(c.MailboxDir)
+		}
 	}
 	if c.Authenticator == nil {
 		c.Authenticator = NewDefaultAuthenticator()
@@ -642,6 +648,10 @@ func LoadConfig() (*Config, error) {
 
 	// Load hostname mappings from env prefixed variables
 	loadHostnameMappingsViper(cfg)
+
+	// Re-apply extension defaults now that env overrides are in place:
+	// the message store choice depends on whether a mailbox was configured.
+	cfg.ensureExtensionDefaults()
 
 	return cfg, nil
 }

@@ -24,6 +24,25 @@ var (
 	stdLogger         = logging.NewStdoutLogger(&defaultsLoggerCfg)
 )
 
+// DiscardMessageStore accepts messages and throws them away. It is the
+// default when no mailbox directory is configured: BadSMTP is a test
+// server, so messages are discarded unless a maildir location is set.
+type DiscardMessageStore struct{}
+
+// NewDiscardMessageStore creates a store that discards messages.
+func NewDiscardMessageStore() *DiscardMessageStore {
+	return &DiscardMessageStore{}
+}
+
+// Store discards the message, logging the discard.
+func (dms *DiscardMessageStore) Store(msg *Message) error {
+	stdLogger.Info("Message discarded (no mailbox configured)",
+		logging.F("from", msg.From),
+		logging.F("to", msg.To),
+		logging.F("size", msg.Size))
+	return nil
+}
+
 // DefaultMessageStore stores messages to local files.
 type DefaultMessageStore struct {
 	mailboxDir string
