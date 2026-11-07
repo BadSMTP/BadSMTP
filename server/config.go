@@ -285,10 +285,9 @@ func (c *Config) ensureScalarDefaults() {
 	if c.Port == 0 {
 		c.Port = DefaultPort
 	}
-	if c.MailboxDir == "" {
-		// Empty means messages are discarded after being received; a
-		// non-empty path opts into saving them as maildir.
-	}
+	// MailboxDir intentionally has no default: empty means messages are
+	// discarded after being received; a non-empty path opts into saving
+	// them as maildir (see ensureExtensionDefaults).
 	if c.ListenAddress == "" {
 		c.ListenAddress = "127.0.0.1"
 	}
