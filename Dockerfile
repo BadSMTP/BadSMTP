@@ -19,11 +19,14 @@ COPY . .
 # Note: Tests are run separately in CI pipeline
 # Skipping tests in Docker build to avoid build failures
 
+# Version to embed in the binary (pass --build-arg VERSION=v0.3.3 at build time)
+ARG VERSION=dev
+
 # Build the binary. CGO_ENABLED=0 already yields a static binary, so the legacy
 # -a -installsuffix cgo flags are unnecessary. Cache the module and build caches.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o badsmtp .
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=${VERSION}" -o badsmtp .
 
 # Runtime stage
 FROM alpine:3.21

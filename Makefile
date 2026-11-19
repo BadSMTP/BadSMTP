@@ -4,6 +4,13 @@ BINARY_NAME=badsmtp
 GO_VERSION=1.27.1
 PLATFORMS=linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64
 
+# Version embedded into the binary via ldflags. Defaults to the nearest git
+# tag (git describe --tags --always --dirty); falls back to "dev" outside a
+# git checkout. Override explicitly for release/packaging builds, e.g.
+# `make build VERSION=0.3.3` (debian/rules passes the changelog version).
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -s -w -X main.Version=$(VERSION)
+
 # Default target
 all: build
 
@@ -16,7 +23,7 @@ init:
 # Respects GOOS and GOARCH environment variables for cross-compilation
 build:
 	# Build the main module in the current directory
-	go build -o ${BINARY_NAME} .
+	go build -ldflags="$(LDFLAGS)" -o ${BINARY_NAME} .
 
 # Build for all platforms
 build-all:
@@ -26,7 +33,7 @@ build-all:
 		OUT=${BINARY_NAME}-$${GOOS}-$${GOARCH}; \
 		if [ "$$GOOS" = "windows" ]; then OUT=$${OUT}.exe; fi; \
 		echo "Building for $$GOOS/$$GOARCH..."; \
-		GOOS=$$GOOS GOARCH=$$GOARCH go build -o $$OUT .; \
+		GOOS=$$GOOS GOARCH=$$GOARCH go build -ldflags="$(LDFLAGS)" -o $$OUT .; \
 	done
 
 # Run the server

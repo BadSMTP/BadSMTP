@@ -32,8 +32,11 @@ export GOTOOLCHAIN := local
 	dh $@
 
 override_dh_auto_build:
-	# Build using make with Go cross-compilation environment set
-	$(MAKE) build
+	# Derive the upstream version from the changelog (strip the Debian
+	# revision, e.g. 0.3.3-1 -> 0.3.3) and embed it in the binary so
+	# `badsmtp --version` reports the real version instead of "dev".
+	VERSION=$$(dpkg-parsechangelog -S Version | sed 's/-[^-]*$$//'); \
+	$(MAKE) build VERSION=$$VERSION
 
 override_dh_auto_install:
 	# Install binary
