@@ -163,6 +163,10 @@ func RegisterFlags() {
 
 // Execute sets the version and runs the root command.
 func Execute(version string) error {
-	rootCmd.Version = version
+	// Normalise the version: drop a leading "v" so tags like v0.3.3 report as 0.3.3
+	rootCmd.Version = strings.TrimPrefix(version, "v")
+	// Print only the version number for --version (e.g. "0.3.3"), without
+	// the default "badsmtp version " prefix.
+	rootCmd.SetVersionTemplate("{{printf \"%s\\n\" .Version}}")
 	return rootCmd.Execute()
 }
